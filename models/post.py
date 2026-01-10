@@ -7,7 +7,7 @@ load_dotenv()
 
 # MongoDB connection
 
-MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/')
+MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/vector_db')
 client = MongoClient(MONGO_URI)
 db = client['social_media_db']
 posts_collection = db['posts']
