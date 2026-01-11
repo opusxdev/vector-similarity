@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize embedding model
-print("📦 Loading embedding model...")
+print("Loading embedding model...")
 model = SentenceTransformer('all-MiniLM-L6-v2')
 print("✓ Model loaded (384 dimensions)")
 
@@ -82,12 +82,16 @@ def embed_all_posts():
         # Create embedding
         embedding = create_embedding(text_to_embed)
         
-        # Prepare point for Qdrant
+        # Convert post_id string to integer hash for Qdrant
+        # We'll extract the number from "post_001" format
+        post_id_num = int(post['post_id'].replace('post_', ''))
+        
+        # Prepare point for Qdrant (use integer ID)
         point = PointStruct(
-            id=post['post_id'],
+            id=post_id_num,  # Changed: Use integer instead of string
             vector=embedding,
             payload={
-                'post_id': post['post_id'],
+                'post_id': post['post_id'],  # Keep original string ID in payload
                 'name': post['name'],
                 'caption': post['caption'],
                 'media_url': post['media_url'],
