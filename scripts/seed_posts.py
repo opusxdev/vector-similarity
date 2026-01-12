@@ -112,7 +112,7 @@ sample_posts = [
 ]
 
 def seed_database():
-    print("🌱 Seeding database with sample posts...\n")
+    print("Seeding database with sample posts..\n")
     
     success_count = 0
     for post_data in sample_posts:
@@ -129,7 +129,7 @@ def seed_database():
         except Exception as e:
             print(f"✗ Error creating {post_data['post_id']}: {e}")
     
-    print(f"\n✅ Successfully seeded {success_count}/{len(sample_posts)} posts!")
+    print(f"\nSuccessfully seeded {success_count}/{len(sample_posts)} posts!")
 
 if __name__ == '__main__':
     seed_database()
