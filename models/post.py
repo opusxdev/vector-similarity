@@ -24,7 +24,7 @@ class Post:
             'name': name,
             'caption': caption,
             'media_url': media_url,
-            'media_type': media_type,  # 'image' or 'video'
+            'media_type': media_type,  
             'created_at': datetime.utcnow()
         }
         
@@ -49,7 +49,7 @@ class Post:
 if __name__ == '__main__':
     print("Testing MongoDB connection...")
     try:
-        # check for connectionsuccess
+       
         client.admin.command('ping')
         print("✓ MongoDB connected successfully!")
         print(f"✓ Database: {db.name}")
