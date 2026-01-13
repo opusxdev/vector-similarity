@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 
+
+
 export default function App() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -13,7 +15,7 @@ export default function App() {
       const response = await fetch('http://localhost:8000/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query, limit: 10 })
+        body: JSON.stringify({ query: query, limit: 5 })
       });
       const data = await response.json();
       setResults(data.results);
