@@ -38,7 +38,7 @@ qdrant_client = QdrantClient(
 )
 
 COLLECTION_NAME = 'social_posts'
-print(f"✓ Connected to collection: {COLLECTION_NAME}\n")
+print(f"Connected to collection: {COLLECTION_NAME}\n")
 
 # Pydantic models
 class PostCreate(BaseModel):
