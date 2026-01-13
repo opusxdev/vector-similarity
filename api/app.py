@@ -11,6 +11,10 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime
 
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+
 load_dotenv()
 
 app = FastAPI(
@@ -18,6 +22,14 @@ app = FastAPI(
     description="Find similar social media posts using vector embeddings",
     version="1.0.0"
 );
+
+# Serve frontend static files
+app.mount(
+    "/assets",
+    StaticFiles(directory="frontend/dist/assets"),
+    name="assets"
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -55,7 +67,7 @@ class SearchQuery(BaseModel):
 
 # routes crud api 
 
-@app.get("/")
+@app.get("/api")
 def root():
     return {
         "message": "Post Similarity API",
@@ -70,6 +82,12 @@ def root():
             "GET /stats": "Get system statistics"
         }
     }
+
+
+
+@app.get("/")
+def serve_frontend():
+    return FileResponse("frontend/dist/index.html")
 
 @app.get("/posts")
 def get_all_posts():
@@ -370,4 +388,4 @@ if __name__ == "__main__":
     print(f" Stats: http://localhost:8000/stats")
     print("="*60 + "\n")
     
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=7860)
