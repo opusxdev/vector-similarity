@@ -109,10 +109,11 @@ sample_posts = [
         'media_url': 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04',
         'media_type': 'image'
     },
+    
 ]
 
 def seed_database():
-    print("🌱 Seeding database with sample posts...\n")
+    print("seeding database with sample posts...\n")
     
     success_count = 0
     for post_data in sample_posts:
@@ -124,12 +125,12 @@ def seed_database():
                 media_url=post_data['media_url'],
                 media_type=post_data['media_type']
             )
-            print(f"✓ Created: {post_data['post_id']} - {post_data['name']}")
+            print(f"Created: {post_data['post_id']} - {post_data['name']}")
             success_count += 1
         except Exception as e:
-            print(f"✗ Error creating {post_data['post_id']}: {e}")
+            print(f"error creating {post_data['post_id']}: {e}")
     
-    print(f"\n✅ Successfully seeded {success_count}/{len(sample_posts)} posts!")
+    print(f"\n Successfully seeded {success_count}/{len(sample_posts)} posts!")
 
 if __name__ == '__main__':
     seed_database()
