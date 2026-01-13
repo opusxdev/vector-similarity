@@ -38,7 +38,7 @@ qdrant_client = QdrantClient(
 )
 
 COLLECTION_NAME = 'social_posts'
-print(f"✓ Connected to collection: {COLLECTION_NAME}\n")
+print(f"Connected to collection: {COLLECTION_NAME}\n")
 
 # Pydantic models
 class PostCreate(BaseModel):
@@ -73,7 +73,7 @@ def root():
 
 @app.get("/posts")
 def get_all_posts():
-    """Get all posts from MongoDB"""
+    
     try:
         posts = Post.get_all_posts()
         for post in posts:
@@ -89,7 +89,7 @@ def get_all_posts():
 
 @app.get("/posts/{post_id}")
 def get_post(post_id: str):
-    """Get a specific post"""
+#    get by id
     try:
         post = Post.get_post(post_id)
         
@@ -106,7 +106,7 @@ def get_post(post_id: str):
 
 @app.post("/posts", status_code=201)
 def create_post(post: PostCreate):
-    """Create a new post and embed it"""
+    # createpost 
     try:
         if not post.post_id.startswith('post_') or not post.post_id.replace('post_', '').isdigit():
             raise HTTPException(
@@ -183,7 +183,6 @@ def search_similar_posts(query: SearchQuery):
             score_threshold=query.min_score
         )
         
-# results
         results = []
         for result in search_results:
             results.append({
@@ -209,7 +208,6 @@ def search_similar_posts(query: SearchQuery):
 
 @app.get("/similar/{post_id}")
 def find_similar_to_post(post_id: str, limit: int = 5, min_score: float = 0.0):
-    """Find posts similar to a specific post"""
     try:
         # Validate post_id format
         if not post_id.startswith('post_') or not post_id.replace('post_', '').isdigit():
@@ -238,7 +236,7 @@ def find_similar_to_post(post_id: str, limit: int = 5, min_score: float = 0.0):
         search_results = qdrant_client.search(
             collection_name=COLLECTION_NAME,
             query_vector=post_vector,
-            limit=limit + 1,  # +1 because original post will be in results
+            limit=limit + 1, 
             score_threshold=min_score
         )
         
@@ -282,12 +280,11 @@ def delete_post(post_id: str):
                 detail="post_id must be in format 'post_001', 'post_002', etc."
             )
         
-        # Check if post exists in MongoDB
+      
         post = Post.get_post(post_id)
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
         
-        # Delete from MongoDB
         Post.delete_post(post_id)
         
         # Convert to integer for Qdrant
@@ -313,10 +310,8 @@ def delete_post(post_id: str):
 def get_stats():
     """Get system statistics"""
     try:
-        # MongoDB stats
         total_posts = len(Post.get_all_posts())
-        
-        # Qdrant stat
+
         collection_info = qdrant_client.get_collection(COLLECTION_NAME)
         
         return {
@@ -343,14 +338,13 @@ def get_stats():
 def health_check():
     """Health check endpoint"""
     try:
-        # MongoDB connection
         Post.get_all_posts()
         mongodb_status = "healthy"
     except:
         mongodb_status = "unhealthy"
     
     try:
-        # Qdrant connection
+        # Qdrant 
         qdrant_client.get_collection(COLLECTION_NAME)
         qdrant_status = "healthy"
     except:
