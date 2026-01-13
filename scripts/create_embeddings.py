@@ -11,19 +11,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize embedding model
-print("Loading embedding model...")
+print("Loading embedding model..")
 model = SentenceTransformer('all-MiniLM-L6-v2')
-print("✓ Model loaded (384 dimensions)")
+print("Model loaded (384 dimensions)")
 
-# Initialize Qdrant client (Cloud)
+# Initialize Qdrant client
 QDRANT_URL = os.getenv('QDRANT_URL')
 QDRANT_API_KEY = os.getenv('QDRANT_API_KEY')
 
 if not QDRANT_URL or not QDRANT_API_KEY:
-    print("❌ Error: QDRANT_URL or QDRANT_API_KEY not found in .env file!")
+    print("Error: QDRANT_URL or QDRANT_API_KEY not found in .env file!")
     sys.exit(1)
 
-print(f"\n🔗 Connecting to Qdrant Cloud...")
+print(f"\n Connecting to Qdrant Cloud...")
 print(f"   URL: {QDRANT_URL}")
 
 qdrant_client = QdrantClient(
@@ -41,21 +41,21 @@ def create_collection():
         collection_names = [col.name for col in collections]
         
         if COLLECTION_NAME in collection_names:
-            print(f"🗑️  Deleting existing collection: {COLLECTION_NAME}")
+            print(f"deleting existing collection: {COLLECTION_NAME}")
             qdrant_client.delete_collection(collection_name=COLLECTION_NAME)
     except Exception as e:
         print(f"Note: {e}")
     
     # Create new collection
-    print(f"🆕 Creating collection: {COLLECTION_NAME}")
+    print(f"Creating collection: {COLLECTION_NAME}")
     qdrant_client.create_collection(
         collection_name=COLLECTION_NAME,
         vectors_config=VectorParams(
-            size=384,  # all-MiniLM-L6-v2 produces 384-dimensional vectors
+            size=384,  
             distance=Distance.COSINE
         )
     )
-    print(f"✓ Collection created successfully")
+    print(f"collection created successfully")
 
 def create_embedding(text):
     """Create embedding for text"""
@@ -63,35 +63,40 @@ def create_embedding(text):
     return embedding.tolist()
 
 def embed_all_posts():
-    """Fetch posts from MongoDB and store embeddings in Qdrant"""
-    print("\n📊 Fetching posts from MongoDB...")
+    print("\n Fetching posts from MongoDB...")
     posts = Post.get_all_posts()
-    print(f"✓ Found {len(posts)} posts\n")
+    print(f"Found {len(posts)} posts\n")
     
     if not posts:
-        print("❌ No posts found in database!")
+        print("No posts found in database!")
         return
     
-    print("🔄 Creating embeddings and storing in Qdrant...")
+    print("Creating embeddings and storing in Qdrant")
     points = []
     
     for i, post in enumerate(posts, 1):
-        # Combine name and caption for richer embedding
+     
         text_to_embed = f"{post['name']}: {post['caption']}"
         
-        # Create embedding
+        
         embedding = create_embedding(text_to_embed)
         
-        # Convert post_id string to integer hash for Qdrant
-        # We'll extract the number from "post_001" format
+       
+
+
+      
         post_id_num = int(post['post_id'].replace('post_', ''))
         
-        # Prepare point for Qdrant (use integer ID)
+        
+
+
+
+
         point = PointStruct(
-            id=post_id_num,  # Changed: Use integer instead of string
+            id=post_id_num, 
             vector=embedding,
             payload={
-                'post_id': post['post_id'],  # Keep original string ID in payload
+                'post_id': post['post_id'],  
                 'name': post['name'],
                 'caption': post['caption'],
                 'media_url': post['media_url'],
@@ -103,18 +108,17 @@ def embed_all_posts():
         points.append(point)
         print(f"  [{i}/{len(posts)}] ✓ Embedded: {post['post_id']} - {post['name']}")
     
-    # Upload all points to Qdrant
-    print("\n☁️  Uploading to Qdrant Cloud...")
+    print("\nUploading to Qdrant Cloud...")
     qdrant_client.upsert(
         collection_name=COLLECTION_NAME,
         points=points
     )
     
-    print(f"\n✅ Successfully stored {len(points)} embeddings in Qdrant Cloud!")
+    print(f"\nSuccessful stored {len(points)} embeddings in Qdrant Clou")
 
 def verify_collection():
     """Verify collection was created properly"""
-    print("\n🔍 Verifying collection...")
+    print("\nverify collection...")
     collection_info = qdrant_client.get_collection(COLLECTION_NAME)
     print(f"\n=== Collection Info ===")
     print(f"✓ Collection name: {COLLECTION_NAME}")
@@ -124,7 +128,7 @@ def verify_collection():
 
 def main():
     print("=" * 60)
-    print("🚀 EMBEDDING CREATION SCRIPT")
+    print("EMBEDDING ")
     print("=" * 60)
     
     try:
@@ -133,12 +137,13 @@ def main():
         verify_collection()
         
         print("\n" + "=" * 60)
-        print("✅ PROCESS COMPLETED SUCCESSFULLY!")
+        print("PROCESS Success")
         print("=" * 60)
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\nError: {e}")
         import traceback
         traceback.print_exc()
 
 if __name__ == '__main__':
     main()
+    
