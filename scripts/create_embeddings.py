@@ -116,15 +116,15 @@ def embed_all_posts():
     
     print(f"\nSuccessful stored {len(points)} embeddings in Qdrant Clou")
 
-def verify_collection():
-    """Verify collection was created properly"""
-    print("\nverify collection...")
-    collection_info = qdrant_client.get_collection(COLLECTION_NAME)
-    print(f"\n=== Collection Info ===")
-    print(f"✓ Collection name: {COLLECTION_NAME}")
-    print(f"✓ Total vectors: {collection_info.points_count}")
-    print(f"✓ Vector size: {collection_info.config.params.vectors.size}")
-    print(f"✓ Distance metric: {collection_info.config.params.vectors.distance}")
+# def verify_collection():
+#     """Verify collection was created properly"""
+#     print("\nverify collection...")
+#     collection_info = qdrant_client.get_collection(COLLECTION_NAME)
+#     print(f"\n=== Collection Info ===")
+#     print(f"✓ Collection name: {COLLECTION_NAME}")
+#     print(f"✓ Total vectors: {collection_info.points_count}")
+#     print(f"✓ Vector size: {collection_info.config.params.vectors.size}")
+#     print(f"✓ Distance metric: {collection_info.config.params.vectors.distance}")
 
 def main():
     print("=" * 60)
@@ -134,7 +134,7 @@ def main():
     try:
         create_collection()
         embed_all_posts()
-        verify_collection()
+        # verify_collection()
         
         print("\n" + "=" * 60)
         print("PROCESS Success")
