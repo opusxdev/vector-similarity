@@ -51,8 +51,11 @@ if __name__ == '__main__':
     try:
         # check for connectionsuccess
         client.admin.command('ping')
-        print("✓ MongoDB connected successfully!")
-        print(f"✓ Database: {db.name}")
-        print(f"✓ Collection: {posts_collection.name}")
+        print("MongoDB connected successfully!")
+        print(f"Database: {db.name}")
+        print(f"Collection: {posts_collection.name}")
     except Exception as e:
-        print(f"✗ MongoDB connection failed: {e}")
+        print(f"MongoDB connection failed: {e}")
+
+
+
