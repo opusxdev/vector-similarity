@@ -20,7 +20,8 @@ export default function App() {
 
   const loadUserLikes = async () => {
     try {
-      const response = await fetch(`http://localhost:7860/likes/${userId}`);
+      // const response = await fetch(`http://localhost:7860/likes/${userId}`);        dev
+      const response = await fetch(`/likes/${userId}`);                               // prod
       const data = await response.json();
       if (data.liked_posts && Array.isArray(data.liked_posts)) {
         const likedPostIds = new Set(data.liked_posts.map(p => p.post_id));
@@ -34,7 +35,8 @@ export default function App() {
 
   const handleLike = async (postId) => {
     try {
-      const response = await fetch('http://localhost:7860/like', {
+      // const response = await fetch('http://localhost:7860/like', {           dev
+      const response = await fetch('/like', {                                 //prod
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ post_id: postId, user_id: userId })
@@ -54,7 +56,9 @@ export default function App() {
 
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:7860/search', {
+      // const response = await fetch('http://localhost:7860/search', {          dev 
+
+      const response = await fetch('/search', {                                // prod 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -85,7 +89,8 @@ export default function App() {
     setRagSources([]);
 
     try {
-      const response = await fetch('http://localhost:7860/rag', {
+      // const response = await fetch('http://localhost:7860/rag', {          dev
+      const response = await fetch('/rag', {                                 //prod
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
