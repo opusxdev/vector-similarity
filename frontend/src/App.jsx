@@ -1,7 +1,3 @@
-
-
-
-
 // dev4 c2
 import React, { useState, useEffect } from 'react';
 import { Heart } from 'lucide-react';
@@ -357,7 +353,7 @@ export default function App() {
 
         <hr style={{ margin: '50px 0', borderColor: '#222' }} />
 
-        <h2>🧠 Ask RAG</h2>
+        <h2>🧠 Ask RAGYY</h2>
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
           <input
             type="text"
