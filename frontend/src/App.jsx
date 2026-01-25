@@ -35,8 +35,8 @@ export default function App() {
 
   const handleLike = async (postId) => {
     try {
-      // const response = await fetch('http://localhost:7860/like', {           dev
-      const response = await fetch('/like', {                                 //prod
+      const response = await fetch('http://localhost:7860/like', {           //dev
+      // const response = await fetch('/like', {                                 //prod
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ post_id: postId, user_id: userId })
@@ -56,9 +56,9 @@ export default function App() {
 
     setLoading(true);
     try {
-      // const response = await fetch('http://localhost:7860/search', {          dev 
+      const response = await fetch('http://localhost:7860/search', {         // dev 
 
-      const response = await fetch('/search', {                                // prod 
+      // const response = await fetch('/search', {                                // prod 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -163,7 +163,7 @@ export default function App() {
             fontWeight: 400
           }}
         >
-          🔍 Vector Similarity + RAG
+          🔍 Vector Similarity 
         </h1>
 
         <div style={{ display: 'flex', gap: '10px', marginBottom: '30px' }}>
@@ -358,7 +358,7 @@ export default function App() {
 
         <hr style={{ margin: '50px 0', borderColor: '#222' }} />
 
-        <h2>🧠 Ask RAGYY</h2>
+        {/* <h2>🧠 Ask RAG</h2>
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
           <input
             type="text"
@@ -394,7 +394,7 @@ export default function App() {
           >
             {ragLoading ? 'Thinking...' : 'Ask'}
           </button>
-        </div>
+        </div> */}
 
         {ragAnswer && (
           <div
