@@ -1,5 +1,5 @@
 // dev4 c2
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Heart } from 'lucide-react';
 
 export default function App() {
@@ -7,6 +7,7 @@ export default function App() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [likedPosts, setLikedPosts] = useState(new Set());
+  const [lastLikedPosts, setLastLikedPosts] = useState([]); // keep up to 2 most recent liked post IDs
   const userId = 'default_user';
 
   const [question, setQuestion] = useState('');
@@ -20,13 +21,27 @@ export default function App() {
 
   const loadUserLikes = async () => {
     try {
-      // const response = await fetch(`http://localhost:7860/likes/${userId}`);        dev
+      const response = await fetch(`http://localhost:7860/likes/${userId}`);       // dev
 
-      const response = await fetch(`/likes/${userId}`);                               // prod
+      // const response = await fetch(`/likes/${userId}`);                               // prod
       const data = await response.json();
       if (data.liked_posts && Array.isArray(data.liked_posts)) {
         const likedPostIds = new Set(data.liked_posts.map(p => p.post_id));
         setLikedPosts(likedPostIds);
+        // set lastLikedPosts to the most recent up to 2 likes (if available)
+        try {
+          const sorted = data.liked_posts.slice().sort((a, b) => {
+            if (!a.liked_at) return 1;
+            if (!b.liked_at) return -1;
+            return new Date(b.liked_at) - new Date(a.liked_at);
+          });
+          const recent = sorted.slice(0, 2).map(p => p.post_id).filter(Boolean);
+          if (recent.length > 0) {
+            setLastLikedPosts(recent);
+          }
+        } catch (e) {
+          // ignore sorting errors
+        }
       }
     } catch (error) {
       console.error('Error loading likes:', error);
@@ -36,9 +51,10 @@ export default function App() {
 
   const handleLike = async (postId) => {
     try {
-      // const response = await fetch('http://localhost:7860/like', {           //dev
+      console.log('[handleLike] sending like for', postId, 'user:', userId);
+      const response = await fetch('http://localhost:7860/like', {           //dev
 
-      const response = await fetch('/like', {                                 //prod
+      // const response = await fetch('/like', {                                 //prod
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ post_id: postId, user_id: userId })
@@ -46,6 +62,14 @@ export default function App() {
 
       if (response.ok) {
         setLikedPosts(prev => new Set([...prev, postId]));
+        // maintain recent list of liked posts (unique, most recent first), keep up to 2
+        setLastLikedPosts(prev => {
+          const arr = [postId, ...prev.filter(id => id !== postId)].slice(0, 2);
+          return arr;
+        });
+      } else {
+        const errText = await response.text();
+        console.error('[handleLike] like failed', response.status, errText);
       }
     } catch (error) {
       console.error('Error liking post:', error);
@@ -53,30 +77,50 @@ export default function App() {
     }
   };
 
-  const handleSearch = async () => {
-    if (!query.trim()) return;
+  const handleSearch = async (searchQuery) => {
+    const q = typeof searchQuery === 'string' ? searchQuery : query;
+    if (!q.trim()) return;
 
     setLoading(true);
     try {
-      // const response = await fetch('http://localhost:7860/search', {         // dev 
+      const payload = {
+        query: q,
+        limit: 10,
+        user_id: userId,
+        last_liked_post_ids: lastLikedPosts
+      };
+      console.log('[handleSearch] payload ->', payload);
 
-      const response = await fetch('/search', {                                // prod 
+      const response = await fetch('http://localhost:7860/search', {         // dev 
+
+      // const response = await fetch('/search', {                                // prod 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          query, 
-          limit: 10,
-          user_id: userId 
-        })
+        body: JSON.stringify(payload)
       });
       const data = await response.json();
+      console.log('[handleSearch] response breakdown ->', data.breakdown);
       setResults(data.results || []);
+      setQuery(q);
     } catch (error) {
       console.error(error);
       alert('Search failed');
     } finally {
       setLoading(false);
     }
+  };
+
+  const searchInputRef = useRef(null);
+
+  const handleRefresh = () => {
+    // Focus the top search input and select its contents so the user can type a new keyword
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+      try { searchInputRef.current.select(); } catch (e) { /* ignore if not selectable */ }
+    }
+
+    // Scroll up so the user can see the search box
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleKeyPress = (e) => {
@@ -91,9 +135,9 @@ export default function App() {
     setRagSources([]);
 
     try {
-      // const response = await fetch('http://localhost:7860/rag', {          dev
+      const response = await fetch('http://localhost:7860/rag', {       //    dev
       
-      const response = await fetch('/rag', {                                 //prod
+      // const response = await fetch('/rag', {                                 //prod
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -166,11 +210,12 @@ export default function App() {
             fontWeight: 400
           }}
         >
-           Vector Similarity 
+           the-algorithm 
         </h1>
 
         <div style={{ display: 'flex', gap: '10px', marginBottom: '30px' }}>
           <input
+            ref={searchInputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -188,6 +233,7 @@ export default function App() {
               borderRadius: '8px'
             }}
           />
+
           <button
             onClick={handleSearch}
             disabled={loading}
@@ -219,14 +265,14 @@ export default function App() {
             </div>
           )}
 
-          {results.map((post) => {
+          {results.map((post, idx) => {
             const badge = getSourceBadge(post.source);
             const categoryColor = getCategoryColor(post.category);
             const isLiked = likedPosts.has(post.post_id);
             
             return (
-              <div
-                key={post.post_id}
+              <React.Fragment key={post.post_id}>
+                <div
                 style={{
                   background: '#111',
                   padding: '20px',
@@ -284,6 +330,11 @@ export default function App() {
                   >
                     <div>
                       <div style={{ fontWeight: 600, marginBottom: '4px' }}>{post.name}</div>
+                      {post.based_on && (
+                        <div style={{ color: '#9ae6b4', fontSize: '12px', marginBottom: '6px' }}>
+                          Based on liked post: {post.based_on}
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <div
                           style={{
@@ -355,6 +406,27 @@ export default function App() {
                   </button>
                 </div>
               </div>
+
+                {idx === 9 && results.length >= 10 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0' }}>
+                    <button
+                      onClick={handleRefresh}
+                      disabled={loading}
+                      style={{
+                        padding: '10px 18px',
+                        background: '#fff',
+                        color: '#000',
+                        borderRadius: '8px',
+                        border: 'none',
+                        cursor: loading ? 'not-allowed' : 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      {loading ? 'Searching...' : 'Perform a new search'}
+                    </button>
+                  </div>
+                )}
+              </React.Fragment>
             );
           })}
         </div>
