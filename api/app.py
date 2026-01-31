@@ -135,6 +135,7 @@ class SearchQuery(BaseModel):
     limit: int = 10
     min_score: Optional[float] = 0.0
     user_id: Optional[str] = "default_user"
+    last_liked_post_ids: Optional[List[str]] = None  # Optional: prefer personalization based on up to 2 recently liked posts
 
 class LikeRequest(BaseModel):
     post_id: str
@@ -407,6 +408,8 @@ def search_similar_posts(query: SearchQuery):
     try:
         if not query.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+        print(f"/search called - query='{query.query}', user_id='{query.user_id}', last_liked_post_ids={query.last_liked_post_ids}")
         
         # Create embedding for query
         query_embedding = model.encode(query.query).tolist()
@@ -450,77 +453,193 @@ def search_similar_posts(query: SearchQuery):
         personalized_added = 0
         
         try:
-            # Check if likes collection exists
-            qdrant_client.get_collection(LIKES_COLLECTION)
-            
-            # Get user's liked posts
-            user_likes = qdrant_client.scroll(
-                collection_name=LIKES_COLLECTION,
-                scroll_filter=Filter(
-                    must=[
-                        FieldCondition(
-                            key="user_id",
-                            match=MatchValue(value=query.user_id)
+            # If frontend provided a list of most-recently-liked post ids, prefer personalization from those posts
+            if query.last_liked_post_ids:
+                try:
+                    # Ensure it's a list and process up to 2 ids
+                    liked_ids = [lid for lid in (query.last_liked_post_ids or []) if isinstance(lid, str)][:2]
+                    for lid in liked_ids:
+                        if (not lid.startswith('post_') or not lid.replace('post_', '').isdigit()):
+                            print(f"Skipping invalid liked id: {lid}")
+                            continue
+                        liked_post_num = int(lid.replace('post_', ''))
+                        liked_post_data = qdrant_client.retrieve(
+                            collection_name=COLLECTION_NAME,
+                            ids=[liked_post_num],
+                            with_vectors=True
                         )
-                    ]
-                ),
-                limit=50,  # Get more likes for better recommendations
-                with_vectors=True,
-                with_payload=True
-            )[0]
-            
-            if user_likes and len(user_likes) > 0:
-                print(f"Found {len(user_likes)} liked posts by user")
-                
-                # Average the vectors of liked posts
-                liked_vectors = [point.vector for point in user_likes]
-                avg_vector = np.mean(liked_vectors, axis=0).tolist()
-                
-                # Search for posts similar to what user has liked
-                personalized_results = qdrant_client.search(
-                    collection_name=COLLECTION_NAME,
-                    query_vector=avg_vector,
-                    limit=30,  # Get many to filter from
-                    score_threshold=0.25  # Lower threshold for personalization
-                )
-                
-                # Filter: Only add posts that are NOT in the current query categories
-                # This ensures personalized posts are from different topics
-                for result in personalized_results:
-                    post_category = result.payload.get('category', 'unknown')
-                    post_id = result.payload['post_id']
-                    
-                    # Skip if already used or same category as query results
-                    if post_id in used_post_ids:
-                        continue
-                    if post_category in query_categories and len(query_categories) > 0:
-                        continue
-                    
-                    if personalized_added < 2:
-                        results.append({
-                            'post_id': post_id,
-                            'name': result.payload['name'],
-                            'caption': result.payload['caption'],
-                            'media_url': result.payload.get('media_url', ''),
-                            'media_type': result.payload.get('media_type', 'image'),
-                            'category': post_category,
-                            'similarity_score': round(result.score, 4),
-                            'similarity_percentage': f"{round(result.score * 100, 2)}%",
-                            'source': 'personalized'
-                        })
-                        used_post_ids.add(post_id)
-                        personalized_added += 1
-                        print(f"Added personalized post from category: {post_category}")
-                        
+
+                        if not liked_post_data or len(liked_post_data) == 0:
+                            continue
+
+                        liked_vector = liked_post_data[0].vector
+
+                        # Search for posts similar to the liked post vector
+                        personalized_results = qdrant_client.search(
+                            collection_name=COLLECTION_NAME,
+                            query_vector=liked_vector,
+                            limit=30,
+                            score_threshold=0.2
+                        )
+
+                        for result in personalized_results:
+                            post_id = result.payload['post_id']
+                            # Skip if already used or is the liked post itself
+                            if post_id in used_post_ids or post_id == lid:
+                                continue
+
+                            # Add one personalized result per liked_id until we have 2
+                            if personalized_added < 2:
+                                results.append({
+                                    'post_id': post_id,
+                                    'name': result.payload['name'],
+                                    'caption': result.payload['caption'],
+                                    'media_url': result.payload.get('media_url', ''),
+                                    'media_type': result.payload.get('media_type', 'image'),
+                                    'category': result.payload.get('category', 'unknown'),
+                                    'similarity_score': round(result.score, 4),
+                                    'similarity_percentage': f"{round(result.score * 100, 2)}%",
+                                    'source': 'personalized',
+                                    'based_on': lid
+                                })
+                                used_post_ids.add(post_id)
+                                personalized_added += 1
+
+                                if personalized_added >= 2:
+                                    break
+
                         if personalized_added >= 2:
                             break
+
+                    print(f"Personalized posts added using last_liked_post_ids: {personalized_added}")
+                except Exception as e:
+                    print(f"Error personalizing from last_liked_post_ids: {e}")
+
+            # If we didn't add enough personalized posts yet, fall back to averaging user's liked vectors
+            if personalized_added < 2:
+                print("FALLBACK: trying average liked-vectors personalization")
+                # Check if likes collection exists
+                qdrant_client.get_collection(LIKES_COLLECTION)
                 
-                print(f"Personalized posts added: {personalized_added}")
-            else:
-                print("No liked posts found for user")
+                # Get user's liked posts
+                user_likes = qdrant_client.scroll(
+                    collection_name=LIKES_COLLECTION,
+                    scroll_filter=Filter(
+                        must=[
+                            FieldCondition(
+                                key="user_id",
+                                match=MatchValue(value=query.user_id)
+                            )
+                        ]
+                    ),
+                    limit=50,  # Get more likes for better recommendations
+                    with_vectors=True,
+                    with_payload=True
+                )[0]
                 
+                if user_likes and len(user_likes) > 0:
+                    print(f"Found {len(user_likes)} liked posts by user (fallback)")
+                    
+                    # Average the vectors of liked posts
+                    liked_vectors = [point.vector for point in user_likes]
+                    avg_vector = np.mean(liked_vectors, axis=0).tolist()
+                    
+                    # Search for posts similar to what user has liked
+                    personalized_results = qdrant_client.search(
+                        collection_name=COLLECTION_NAME,
+                        query_vector=avg_vector,
+                        limit=30,  # Get many to filter from
+                        score_threshold=0.25  # Lower threshold for personalization
+                    )
+                    
+                    # Filter: Only add posts that are NOT in the current query categories
+                    # This ensures personalized posts are from different topics
+                    for result in personalized_results:
+                        post_category = result.payload.get('category', 'unknown')
+                        post_id = result.payload['post_id']
+                        
+                        # Skip if already used or same category as query results
+                        if post_id in used_post_ids:
+                            continue
+                        if post_category in query_categories and len(query_categories) > 0:
+                            continue
+                        
+                        if personalized_added < 2:
+                            results.append({
+                                'post_id': post_id,
+                                'name': result.payload['name'],
+                                'caption': result.payload['caption'],
+                                'media_url': result.payload.get('media_url', ''),
+                                'media_type': result.payload.get('media_type', 'image'),
+                                'category': post_category,
+                                'similarity_score': round(result.score, 4),
+                                'similarity_percentage': f"{round(result.score * 100, 2)}%",
+                                'source': 'personalized'
+                            })
+                            used_post_ids.add(post_id)
+                            personalized_added += 1
+                            print(f"Added personalized post from category: {post_category}")
+                            
+                            if personalized_added >= 2:
+                                break
+                    
+                    print(f"Personalized posts added: {personalized_added}")
+                else:
+                    print("No liked posts found for user (fallback)")
         except Exception as e:
             print(f"Personalization error: {e}")
+
+        # FINAL RELAXED FALLBACK: If we still don't have 2 personalized posts, try again
+        # using the liked ids but allow posts from any category (ignore query_categories)
+        if personalized_added < 2 and query.last_liked_post_ids:
+            try:
+                print("FINAL FALLBACK: attempting relaxed personalization using liked ids (ignoring categories)")
+                for lid in (query.last_liked_post_ids or [])[:2]:
+                    if not lid or not isinstance(lid, str):
+                        continue
+                    if (not lid.startswith('post_') or not lid.replace('post_', '').isdigit()):
+                        continue
+                    liked_num = int(lid.replace('post_', ''))
+                    liked_data = qdrant_client.retrieve(
+                        collection_name=COLLECTION_NAME,
+                        ids=[liked_num],
+                        with_vectors=True
+                    )
+                    if not liked_data:
+                        continue
+                    vec = liked_data[0].vector
+                    # search with low threshold and don't care about category
+                    relaxed_hits = qdrant_client.search(
+                        collection_name=COLLECTION_NAME,
+                        query_vector=vec,
+                        limit=20,
+                        score_threshold=0.0
+                    )
+                    for r in relaxed_hits:
+                        pid = r.payload['post_id']
+                        if pid in used_post_ids or pid == lid:
+                            continue
+                        results.append({
+                            'post_id': pid,
+                            'name': r.payload.get('name', ''),
+                            'caption': r.payload.get('caption', ''),
+                            'media_url': r.payload.get('media_url', ''),
+                            'media_type': r.payload.get('media_type', 'image'),
+                            'category': r.payload.get('category', 'unknown'),
+                            'similarity_score': round(r.score, 4),
+                            'similarity_percentage': f"{round(r.score * 100, 2)}%",
+                            'source': 'personalized_relaxed',
+                            'based_on': lid
+                        })
+                        used_post_ids.add(pid)
+                        personalized_added += 1
+                        print(f"FINAL FALLBACK added personalized post {pid} based on {lid}")
+                        if personalized_added >= 2:
+                            break
+                    if personalized_added >= 2:
+                        break
+            except Exception as e:
+                print(f"Final relaxed personalization error: {e}")
         
         # Fill remaining slots with random posts from DIFFERENT categories
         random_added = 0
