@@ -220,7 +220,7 @@ export default function App() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Search posts..."
+            placeholder="Search posts."
             disabled={loading}
             style={{
               flex: 1,
