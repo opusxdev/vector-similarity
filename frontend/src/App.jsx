@@ -1,580 +1,539 @@
-// dev4 c2
+// v2 
 import React, { useState, useEffect, useRef } from 'react';
 import { Heart } from 'lucide-react';
 
-export default function App() {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [likedPosts, setLikedPosts] = useState(new Set());
-  const [lastLikedPosts, setLastLikedPosts] = useState([]); // keep up to 2 most recent liked post IDs
-  const userId = 'default_user';
+const DEV_MODE = false ;
+const API_BASE = DEV_MODE ? 'http://localhost:7860' : '';
+const USER_ID  = 'default_user';
 
-  const [question, setQuestion] = useState('');
-  const [ragAnswer, setRagAnswer] = useState('');
-  const [ragSources, setRagSources] = useState([]);
-  const [ragLoading, setRagLoading] = useState(false);
+const SOURCE_BADGE = {
+    query:        { bg: '#1a4d2e', color: '#4ade80', text: 'Query Match' },
+    personalized: { bg: '#1e3a8a', color: '#60a5fa', text: 'For You'     },
+    random:       { bg: '#4c1d95', color: '#a78bfa', text: 'Discover'    },
+};
 
-  useEffect(() => {
-    loadUserLikes();
-  }, []);
+const CATEGORY_COLOR = {
+    tech: '#3b82f6', ai: '#8b5cf6', healthcare: '#10b981', web3: '#f59e0b',
+    socialmedia: '#ec4899', food: '#f97316', sports: '#06b6d4', finance: '#84cc16',
+    movies: '#ef4444', music: '#a855f7', education: '#14b8a6', travel: '#6366f1',
+    art: '#f43f5e', nature: '#22c55e', unknown: '#6b7280',
+};
 
-  const loadUserLikes = async () => {
-    try {
-      // const response = await fetch(`http://localhost:7860/likes/${userId}`);       // dev
+const getBadge    = s => SOURCE_BADGE[s] || SOURCE_BADGE.query;
+const getCatColor = c => CATEGORY_COLOR[c?.toLowerCase()] || '#6b7280';
+// bento Pattern 
+const BENTO_PATTERN = [
+    { col: 1, row: 2 }, 
+    { col: 2, row: 1 }, 
+    { col: 1, row: 1 }, 
+    { col: 1, row: 1 }, 
+    { col: 1, row: 1 }, 
+    { col: 2, row: 2 }, 
+    { col: 1, row: 1 }, 
+    { col: 1, row: 2 }, 
+    { col: 2, row: 1 }, 
+    { col: 1, row: 1 }, 
+    { col: 1, row: 1 }, 
+    { col: 2, row: 1 }, 
+];
 
-      const response = await fetch(`/likes/${userId}`);                               // prod
-      const data = await response.json();
-      if (data.liked_posts && Array.isArray(data.liked_posts)) {
-        const likedPostIds = new Set(data.liked_posts.map(p => p.post_id));
-        setLikedPosts(likedPostIds);
-        // set lastLikedPosts to the most recent up to 2 likes (if available)
-        try {
-          const sorted = data.liked_posts.slice().sort((a, b) => {
-            if (!a.liked_at) return 1;
-            if (!b.liked_at) return -1;
-            return new Date(b.liked_at) - new Date(a.liked_at);
-          });
-          const recent = sorted.slice(0, 2).map(p => p.post_id).filter(Boolean);
-          if (recent.length > 0) {
-            setLastLikedPosts(recent);
-          }
-        } catch (e) {
-          // ignore sorting errors
-        }
-      }
-    } catch (error) {
-      console.error('Error loading likes:', error);
-      setLikedPosts(new Set());
-    }
-  };
+// benti card 
 
-  const handleLike = async (postId) => {
-    try {
-      console.log('[handleLike] sending like for', postId, 'user:', userId);
-      // const response = await fetch('http://localhost:7860/like', {           //dev
+function BentoCard({ post, span, visible, animDelay }) {
+    const catColor = getCatColor(post.category);
+    const isBig    = span.col === 2 && span.row === 2;
+    const isWide   = span.col === 2 && span.row === 1;
+    const isTall   = span.col === 1 && span.row === 2;
+    const isSquare = span.col === 1 && span.row === 1;
 
-      const response = await fetch('/like', {                                 //prod
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ post_id: postId, user_id: userId })
-      });
 
-      if (response.ok) {
-        setLikedPosts(prev => new Set([...prev, postId]));
-        // maintain recent list of liked posts (unique, most recent first), keep up to 2
-        setLastLikedPosts(prev => {
-          const arr = [postId, ...prev.filter(id => id !== postId)].slice(0, 2);
-          return arr;
-        });
-      } else {
-        const errText = await response.text();
-        console.error('[handleLike] like failed', response.status, errText);
-      }
-    } catch (error) {
-      console.error('Error liking post:', error);
-      alert('Failed to like post');
-    }
-  };
+    const captionLines = isBig ? 3 : isTall ? 2 : isWide ? 1 : 1;
+    const nameLines = isBig ? 2 : 1;
 
-  const handleSearch = async (searchQuery) => {
-    const q = typeof searchQuery === 'string' ? searchQuery : query;
-    if (!q.trim()) return;
+    return (
+        <div style={{
+            gridColumn: `span ${span.col}`,
+            gridRow:    `span ${span.row}`,
+            background:          post.media_url
+                ? `#0e0e0e url("${post.media_url}") center/cover no-repeat`
+                : '#0e0e0e',
+            border:              '1px solid #1e1e1e',
+            borderRadius:        '10px',
+            overflow:            'hidden',
+            position:            'relative',
+            opacity:             visible ? 1 : 0,
+            transform:           visible ? 'scale(1)' : 'scale(0.95)',
+            transition:          `opacity 0.45s ease ${animDelay}ms, transform 0.45s ease ${animDelay}ms`,
+            display:             'flex',
+            flexDirection:       'column',
+            justifyContent:      'flex-end',  
+        }}>
 
-    setLoading(true);
-    try {
-      const payload = {
-        query: q,
-        limit: 10,
-        user_id: userId,
-        last_liked_post_ids: lastLikedPosts
-      };
-      console.log('[handleSearch] payload ->', payload);
+            <div style={{
+                position:   'absolute',
+                inset:      0,
+                background: post.media_url
+                    ? 'linear-gradient(to bottom, transparent 20%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.92) 100%)'
+                    : 'linear-gradient(to bottom, #111 0%, #0a0a0a 100%)',
+                zIndex:     1,
+            }} />
 
-      // const response = await fetch('http://localhost:7860/search', {         // dev 
+            <div style={{
+                padding:    isBig ? '11px 12px' : isWide ? '8px 10px' : '7px 9px',
+                position:   'relative',
+                zIndex:     2,
+            }}>
 
-      const response = await fetch('/search', {                                // prod 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await response.json();
-      console.log('[handleSearch] response breakdown ->', data.breakdown);
-      setResults(data.results || []);
-      setQuery(q);
-    } catch (error) {
-      console.error(error);
-      alert('Search failed');
-    } finally {
-      setLoading(false);
-    }
-  };
+                {post.category && post.category !== 'unknown' && (
+                    <div style={{
+                        display:        'inline-block',
+                        background:     catColor + '28',
+                        color:          catColor,
+                        fontSize:       '8px',
+                        fontWeight:     800,
+                        letterSpacing:  '0.6px',
+                        padding:        '2px 6px',
+                        borderRadius:   '4px',
+                        marginBottom:   '4px',
+                        textTransform:  'uppercase',
+                    }}>
+                        {post.category}
+                    </div>
+                )}
 
-  const searchInputRef = useRef(null);
-
-  const handleRefresh = () => {
-    // Focus the top search input and select its contents so the user can type a new keyword
-    if (searchInputRef.current) {
-      searchInputRef.current.focus();
-      try { searchInputRef.current.select(); } catch (e) { /* ignore if not selectable */ }
-    }
-
-    // Scroll up so the user can see the search box
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') handleSearch();
-  };
-
-  const handleRagAsk = async () => {
-    if (!question.trim()) return;
-
-    setRagLoading(true);
-    setRagAnswer('');
-    setRagSources([]);
-
-    try {
-      // const response = await fetch('http://localhost:7860/rag', {       //    dev
-      
-      const response = await fetch('/rag', {                                 //prod
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question,
-          limit: 5,
-          min_score: 0.1
-        })
-      });
-
-      const data = await response.json();
-      setRagAnswer(data.answer || '');
-      setRagSources(data.sources || []);
-    } catch (error) {
-      console.error(error);
-      alert('RAG failed');
-    } finally {
-      setRagLoading(false);
-    }
-  };
-
-  const handleRagKeyPress = (e) => {
-    if (e.key === 'Enter') handleRagAsk();
-  };
-
-  const getSourceBadge = (source) => {
-    const badges = {
-      query: { bg: '#1a4d2e', text: 'Query Match', color: '#4ade80' },
-      personalized: { bg: '#1e3a8a', text: 'For You', color: '#60a5fa' },
-      random: { bg: '#4c1d95', text: 'Discover', color: '#a78bfa' }
-    };
-    return badges[source] || badges.query;
-  };
-
-  const getCategoryColor = (category) => {
-    const colors = {
-      tech: '#3b82f6',
-      ai: '#8b5cf6',
-      healthcare: '#10b981',
-      web3: '#f59e0b',
-      socialmedia: '#ec4899',
-      food: '#f97316',
-      sports: '#06b6d4',
-      finance: '#84cc16',
-      movies: '#ef4444',
-      music: '#a855f7',
-      education: '#14b8a6',
-      travel: '#6366f1',
-      art: '#f43f5e',
-      nature: '#22c55e'
-    };
-    return colors[category] || '#6b7280';
-  };
-
-  return (
-    <div
-      style={{
-        background: '#000',
-        color: '#fff',
-        minHeight: '100vh',
-        padding: '40px 20px',
-        fontFamily: 'system-ui, sans-serif'
-      }}
-    >
-      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-        <h1
-          style={{
-            fontSize: '40px',
-            marginBottom: '50px',
-            textAlign: 'center',
-            fontWeight: 400
-          }}
-        >
-           the-algorithm 
-        </h1>
-
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '30px' }}>
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Search posts."
-            disabled={loading}
-            style={{
-              flex: 1,
-              padding: '12px 16px',
-              background: '#1a1a1a',
-              border: '1px solid #333',
-              color: '#fff',
-              fontSize: '16px',
-              outline: 'none',
-              borderRadius: '8px'
-            }}
-          />
-
-          <button
-            onClick={handleSearch}
-            disabled={loading}
-            style={{
-              padding: '12px 32px',
-              background: loading ? '#666' : '#fff',
-              color: '#000',
-              border: 'none',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontSize: '16px',
-              fontWeight: 500,
-              borderRadius: '8px'
-            }}
-          >
-            {loading ? 'Searching...' : 'Search'}
-          </button>
-        </div>
-
-        <div>
-          {results.length === 0 && !loading && query && (
-            <div
-              style={{
-                textAlign: 'center',
-                color: '#666',
-                padding: '40px'
-              }}
-            >
-              No results found
-            </div>
-          )}
-
-          {results.map((post, idx) => {
-            const badge = getSourceBadge(post.source);
-            const categoryColor = getCategoryColor(post.category);
-            const isLiked = likedPosts.has(post.post_id);
-            
-            return (
-              <React.Fragment key={post.post_id}>
-                <div
-                style={{
-                  background: '#111',
-                  padding: '20px',
-                  marginBottom: '10px',
-                  border: '1px solid #222',
-                  borderRadius: '12px',
-                  display: 'flex',
-                  gap: '16px',
-                  position: 'relative'
-                }}
-              >
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: '12px',
-                    right: '12px',
-                    background: badge.bg,
-                    color: badge.color,
-                    padding: '4px 12px',
-                    borderRadius: '12px',
-                    fontSize: '12px',
-                    fontWeight: 600
-                  }}
-                >
-                  {badge.text}
+                <div style={{
+                    fontWeight:         700,
+                    fontSize:           isBig ? '12px' : '11px',
+                    color:              '#f0f0f0',
+                    lineHeight:         1.3,
+                    marginBottom:       captionLines > 0 ? '3px' : 0,
+                    overflow:           'hidden',
+                    display:            '-webkit-box',
+                    WebkitLineClamp:    nameLines,
+                    WebkitBoxOrient:    'vertical',
+                }}>
+                    {post.name}
                 </div>
 
-                {post.media_url && (
-                  <img
-                    src={post.media_url}
-                    alt={post.caption}
-                    style={{
-                      width: '80px',
-                      height: '80px',
-                      objectFit: 'cover',
-                      flexShrink: 0,
-                      background: '#222',
-                      borderRadius: '8px'
-                    }}
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                    }}
-                  />
-                )}
-                
-                <div style={{ flex: 1 }}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      marginBottom: '10px',
-                      alignItems: 'center',
-                      paddingRight: '80px'
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600, marginBottom: '4px' }}>{post.name}</div>
-                      {post.based_on && (
-                        <div style={{ color: '#9ae6b4', fontSize: '12px', marginBottom: '6px' }}>
-                          Based on liked post: {post.based_on}
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <div
-                          style={{
-                            color: '#666',
-                            fontSize: '14px'
-                          }}
-                        >
-                          {post.post_id}
-                        </div>
-                        {post.category && (
-                          <div
-                            style={{
-                              background: categoryColor + '20',
-                              color: categoryColor,
-                              padding: '2px 8px',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              fontWeight: 500
-                            }}
-                          >
-                            {post.category}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        color: '#888',
-                        fontSize: '14px'
-                      }}
-                    >
-                      {post.similarity_percentage}
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      color: '#ccc',
-                      lineHeight: '1.5',
-                      marginBottom: '12px'
-                    }}
-                  >
+                <div style={{
+                    fontSize:           isSquare ? '9px' : '10px',
+                    color:              post.media_url ? 'rgba(255,255,255,0.55)' : '#555',
+                    lineHeight:         1.35,
+                    overflow:           'hidden',
+                    display:            '-webkit-box',
+                    WebkitLineClamp:    captionLines,
+                    WebkitBoxOrient:    'vertical',
+                }}>
                     {post.caption}
-                  </div>
-                  
-                  <button
-                    onClick={() => handleLike(post.post_id)}
-                    disabled={isLiked}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '8px 16px',
-                      background: isLiked ? '#dc2626' : '#1a1a1a',
-                      color: isLiked ? '#fff' : '#888',
-                      border: `1px solid ${isLiked ? '#dc2626' : '#333'}`,
-                      borderRadius: '20px',
-                      cursor: isLiked ? 'default' : 'pointer',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    <Heart
-                      size={16}
-                      fill={isLiked ? '#fff' : 'none'}
-                      stroke={isLiked ? '#fff' : '#888'}
-                    />
-                    {isLiked ? 'Liked' : 'Like'}
-                  </button>
                 </div>
-              </div>
-
-                {idx === 9 && results.length >= 10 && (
-                  <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0' }}>
-                    <button
-                      onClick={handleRefresh}
-                      disabled={loading}
-                      style={{
-                        padding: '10px 18px',
-                        background: '#fff',
-                        color: '#000',
-                        borderRadius: '8px',
-                        border: 'none',
-                        cursor: loading ? 'not-allowed' : 'pointer',
-                        fontWeight: 600
-                      }}
-                    >
-                      {loading ? 'Searching...' : 'Perform a new search'}
-                    </button>
-                  </div>
-                )}
-              </React.Fragment>
-            );
-          })}
-        </div>
-
-        <hr style={{ margin: '50px 0', borderColor: '#222' }} />
-
-        {/* <h2>🧠 Ask RAG</h2>
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-          <input
-            type="text"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            onKeyPress={handleRagKeyPress}
-            placeholder="Ask a question (e.g. posts about travel, food, coding...)"
-            disabled={ragLoading}
-            style={{
-              flex: 1,
-              padding: '12px 16px',
-              background: '#1a1a1a',
-              border: '1px solid #333',
-              color: '#fff',
-              fontSize: '16px',
-              outline: 'none',
-              borderRadius: '8px'
-            }}
-          />
-          <button
-            onClick={handleRagAsk}
-            disabled={ragLoading}
-            style={{
-              padding: '12px 32px',
-              background: ragLoading ? '#666' : '#fff',
-              color: '#000',
-              border: 'none',
-              cursor: ragLoading ? 'not-allowed' : 'pointer',
-              fontSize: '16px',
-              fontWeight: 500,
-              borderRadius: '8px'
-            }}
-          >
-            {ragLoading ? 'Thinking...' : 'Ask'}
-          </button>
-        </div> */}
-
-        {ragAnswer && (
-          <div
-            style={{
-              background: '#111',
-              padding: '20px',
-              border: '1px solid #222',
-              borderRadius: '12px',
-              marginBottom: '24px'
-            }}
-          >
-            <h3 style={{ marginBottom: '16px' }}>Answer</h3>
-            <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-              {ragSources.length > 0 && ragSources[0].media_url && (
-                <img
-                  src={ragSources[0].media_url}
-                  alt="Related post"
-                  style={{
-                    width: '200px',
-                    height: '200px',
-                    objectFit: 'cover',
-                    borderRadius: '12px',
-                    flexShrink: 0,
-                    background: '#222'
-                  }}
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                  }}
-                />
-              )}
-              <p
-                style={{
-                  whiteSpace: 'pre-wrap',
-                  lineHeight: '1.6',
-                  flex: 1,
-                  margin: 0
-                }}
-              >
-                {ragAnswer}
-              </p>
             </div>
-          </div>
-        )}
+        </div>
+    );
+}
 
-        {ragSources.length > 0 && (
-          <>
-            <h3 style={{ marginTop: '10px', marginBottom: '12px' }}>
-              Sources ({ragSources.length})
-            </h3>
-            {ragSources.map((s, i) => (
-              <div
-                key={i}
-                style={{
-                  background: '#0f0f0f',
-                  padding: '16px',
-                  marginBottom: '12px',
-                  border: '1px solid #222',
-                  borderRadius: '12px',
-                  display: 'flex',
-                  gap: '16px'
-                }}
-              >
-                {s.media_url && (
-                  <img
-                    src={s.media_url}
-                    alt={s.caption || 'Post image'}
-                    style={{
-                      width: '120px',
-                      height: '120px',
-                      objectFit: 'cover',
-                      borderRadius: '8px',
-                      flexShrink: 0,
-                      background: '#222'
-                    }}
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                    }}
-                  />
-                )}
-                <div style={{ flex: 1 }}>
-                  <b>{s.name}</b>
-                  <div
-                    style={{
-                      color: '#888',
-                      fontSize: '14px',
-                      marginBottom: '8px'
-                    }}
-                  >
-                    {s.post_id} • score: {s.similarity_score}
-                  </div>
-                  <p
-                    style={{
-                      margin: 0,
-                      color: '#ccc',
-                      lineHeight: '1.5'
-                    }}
-                  >
-                    {s.caption}
-                  </p>
-                </div>
-              </div>
+//Bentogrid 
+function BentoGrid({ posts, visible }) {
+    const [cardsVisible, setCardsVisible] = useState(false);
+
+    useEffect(() => {
+        if (posts.length > 0) {
+            const t = setTimeout(() => setCardsVisible(true), 80);
+            return () => clearTimeout(t);
+        }
+    }, [posts]);
+
+    if (posts.length === 0) {
+        return (
+            <div style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gridAutoRows:        '60px',
+                gap:                 '5px',
+                marginBottom:        '28px',
+            }}>
+                {BENTO_PATTERN.map((span, i) => (
+                    <div key={i} style={{
+                        gridColumn:   `span ${span.col}`,
+                        gridRow:      `span ${span.row}`,
+                        background:   '#0e0e0e',
+                        borderRadius: '10px',
+                        animation:    `pulse 1.8s ease-in-out ${i * 60}ms infinite`,
+                    }} />
+                ))}
+                <style>{`@keyframes pulse { 0%,100%{opacity:.25} 50%{opacity:.5} }`}</style>
+            </div>
+        );
+    }
+
+    return (
+        <div style={{
+            display:             'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridAutoRows:        '60px',
+            gap:                 '5px',
+            marginBottom:        '28px',
+            opacity:             visible ? 1 : 0,
+            transform:           visible ? 'none' : 'translateY(8px)',
+            transition:          'opacity 0.5s ease, transform 0.5s ease',
+        }}>
+            {posts.slice(0, 12).map((post, i) => (
+                <BentoCard
+                    key={post.post_id}
+                    post={post}
+                    span={BENTO_PATTERN[i] || { col: 1, row: 1 }}
+                    visible={cardsVisible}
+                    animDelay={i * 35}
+                />
             ))}
-          </>
-        )}
-      </div>
-    </div>
-  );
+        </div>
+    );
+}
+
+//main appp
+export default function App() {
+    const [query,   setQuery]   = useState('');
+    const [results, setResults] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error,   setError]   = useState('');
+    const [breakdown, setBreakdown] = useState(null);
+
+    const [bentoPosts,   setBentoPosts]   = useState([]);
+    const [bentoVisible, setBentoVisible] = useState(true);
+    const [bentoLoaded,  setBentoLoaded]  = useState(false);
+
+    const [likedInSession, setLikedInSession] = useState([]);
+    const [allLikedSet,    setAllLikedSet]    = useState(new Set());
+
+    const [question,   setQuestion]   = useState('');
+    const [ragAnswer,  setRagAnswer]  = useState('');
+    const [ragSources, setRagSources] = useState([]);
+    const [ragLoading, setRagLoading] = useState(false);
+
+    const searchInputRef = useRef(null);
+
+    useEffect(() => {
+        fetch(`${API_BASE}/random?count=12`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.posts?.length) {
+                    setBentoPosts(data.posts);
+                    setBentoLoaded(true);
+                }
+            })
+            .catch(err => console.warn('Bento load failed:', err.message));
+
+        fetch(`${API_BASE}/likes/${USER_ID}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.liked_posts?.length) {
+                    setAllLikedSet(new Set(data.liked_posts.map(p => p.post_id)));
+                    const sorted = [...data.liked_posts]
+                        .sort((a, b) => new Date(b.liked_at) - new Date(a.liked_at))
+                        .map(p => p.post_id);
+                    setLikedInSession(sorted);
+                }
+            })
+            .catch(() => {});
+    }, []);
+
+//like
+    async function handleLike(postId) {
+        if (allLikedSet.has(postId)) return;
+        try {
+            const res = await fetch(`${API_BASE}/like`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ post_id: postId, user_id: USER_ID })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            setAllLikedSet(prev => new Set([...prev, postId]));
+            setLikedInSession(prev => [postId, ...prev.filter(id => id !== postId)]);
+            setError('');
+        } catch (err) {
+            setError(`Failed to like: ${err.message}`);
+        }
+    }
+
+//search 
+    async function handleSearch(overrideQuery) {
+        const q = typeof overrideQuery === 'string' ? overrideQuery : query;
+        if (!q.trim()) { setError('Please enter a search query'); return; }
+
+        setLoading(true);
+        setError('');
+        setBentoVisible(false);
+
+        try {
+            const res = await fetch(`${API_BASE}/search`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({
+                    query: q,
+                    user_id: USER_ID,
+                    session_liked_ids: likedInSession,
+                })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+            const data = await res.json();
+            setResults(data.results || []);
+            setBreakdown(data.breakdown || null);
+            setQuery(q);
+        } catch (err) {
+            setError(`Search failed: ${err.message}`);
+            setResults([]);
+            setBreakdown(null);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    function handleKeyPress(e)    { if (e.key === 'Enter') handleSearch(); }
+    function handleRagKeyPress(e) { if (e.key === 'Enter') handleRagAsk(); }
+
+    function handleNewSearch() {
+        searchInputRef.current?.focus();
+        try { searchInputRef.current?.select(); } catch {}
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+//rag
+    async function handleRagAsk() {
+        if (!question.trim()) { setError('Please enter a question'); return; }
+        setRagLoading(true);
+        setRagAnswer('');
+        setRagSources([]);
+        setError('');
+        try {
+            const res = await fetch(`${API_BASE}/rag`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ question, limit: 5, min_score: 0.1 })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            setRagAnswer(data.answer || '');
+            setRagSources(data.sources || []);
+        } catch (err) {
+            setError(`RAG failed: ${err.message}`);
+        } finally {
+            setRagLoading(false);
+        }
+    }
+
+    let modeLabel = '✦ Search to begin';
+    let modeColor = '#444';
+    if (breakdown) {
+        if (breakdown.mode === 'personalized') {
+            modeLabel = `✦ Personalized — ${breakdown.personalized} interest-based · ${breakdown.query_based} query`;
+            modeColor = '#60a5fa';
+        } else {
+            modeLabel = `✦ Discovery — ${breakdown.random} random · ${breakdown.query_based} query`;
+            modeColor = '#a78bfa';
+        }
+    }
+    const showBento = results.length === 0;
+
+    return (
+        <div style={{ background: '#000', color: '#fff', minHeight: '100vh', padding: '36px 20px 60px', fontFamily: 'system-ui, sans-serif' }}>
+            <div style={{ maxWidth: '860px', margin: '0 auto' }}>
+                <h1 style={{
+                    fontSize: '38px', marginBottom: '8px', textAlign: 'center', fontWeight: 400,
+                    background: 'linear-gradient(to bottom, #064e40, #0b6b58, #10775f, #139c77, #33b89b)',
+                    WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                }}>
+                    the-algorithm
+                </h1>
+
+                {DEV_MODE && (
+                    <div style={{ textAlign: 'center', fontSize: '11px', color: '#6b6868', marginBottom: '6px' }}>
+                        web3 · travel · food · coding · ai · art · nature · music · movies · sports · finance · socialmedia · education · healthcare · tech
+                    </div>
+                )}
+
+                <div style={{ textAlign: 'center', fontSize: '11px', color: modeColor, marginBottom: '20px', minHeight: '16px' }}>
+                    {modeLabel}
+                </div>
+
+                {error && (
+                    <div style={{ background: '#7f1d1d', border: '1px solid #dc2626', color: '#fca5a5', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' }}>
+                        {error}
+                    </div>
+                )}
+
+              {/* searchBar  */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+                    <input
+                        ref={searchInputRef}
+                        type="text"
+                        value={query}
+                        onChange={e => setQuery(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Search posts…"
+                        disabled={loading}
+                        style={{ flex: 1, padding: '11px 14px', background: '#111', border: '1px solid #222', color: '#fff', fontSize: '15px', outline: 'none', borderRadius: '8px' }}
+                    />
+                    <button
+                        onClick={() => handleSearch()}
+                        disabled={loading}
+                        style={{ padding: '11px 28px', background: loading ? '#333' : '#fff', color: '#000', border: 'none', cursor: loading ? 'not-allowed' : 'pointer', fontSize: '15px', fontWeight: 600, borderRadius: '8px' }}
+                    >
+                        {loading ? '…' : 'Search'}
+                    </button>
+                </div>
+
+                {showBento && (
+                    <div style={{
+                        opacity:    bentoVisible ? 1 : 0,
+                        transform:  bentoVisible ? 'none' : 'translateY(-6px)',
+                        transition: 'opacity 0.35s ease, transform 0.35s ease',
+                        pointerEvents: bentoVisible ? 'auto' : 'none',
+                    }}>
+                        <div style={{ fontSize: '10px', color: '#333', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>
+                            Trending now
+                        </div>
+
+                        <BentoGrid posts={bentoPosts} visible={bentoLoaded} />
+                    </div>
+                )}
+                   {/* search results  */}
+                {results.length === 0 && !loading && query && (
+                    <div style={{ textAlign: 'center', color: '#333', padding: '40px', fontSize: '14px' }}>
+                        No results found
+                    </div>
+                )}
+
+                {/* Session seeds debug*/}
+                {DEV_MODE && likedInSession.length > 0 && results.length > 0 && (
+                    <div style={{ marginBottom: '14px', padding: '8px 12px', background: '#0a1628', border: '1px solid #1e3a8a', borderRadius: '7px', fontSize: '10px', color: '#60a5fa' }}>
+                        <span style={{ opacity: 0.6 }}>seeds → </span>
+                        {likedInSession.join(' · ')}
+                    </div>
+                )}
+
+                {results.map((post, idx) => {
+                    const badge    = getBadge(post.source);
+                    const catColor = getCatColor(post.category);
+                    const liked    = allLikedSet.has(post.post_id);
+
+                    return (
+                        <React.Fragment key={post.post_id}>
+                            <div style={{
+                                background: '#111',
+                                padding: '18px',
+                                marginBottom: '8px',
+                                border: `1px solid ${post.source === 'personalized' ? '#1e3a8a33' : '#1a1a1a'}`,
+                                borderRadius: '10px',
+                                display: 'flex',
+                                gap: '14px',
+                                position: 'relative',
+                            }}>
+                                <div style={{ position: 'absolute', top: '11px', right: '11px', background: badge.bg, color: badge.color, padding: '3px 10px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.3px' }}>
+                                    {badge.text}
+                                </div>
+
+                                {post.media_url && (
+                                    <img src={post.media_url} alt="" style={{ width: '72px', height: '72px', objectFit: 'cover', flexShrink: 0, borderRadius: '7px', background: '#1a1a1a' }}
+                                        onError={e => { e.target.style.display = 'none'; }} />
+                                )}
+
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '7px', alignItems: 'flex-start', paddingRight: '90px' }}>
+                                        <div>
+                                            <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '3px' }}>{post.name}</div>
+                                            {post.based_on && (
+                                                <div style={{ color: '#60a5fa', fontSize: '10px', marginBottom: '4px', opacity: 0.8 }}>
+                                                    ↳ because you liked {post.based_on}
+                                                </div>
+                                            )}
+                                            <div style={{ display: 'flex', gap: '7px', alignItems: 'center' }}>
+                                                <span style={{ color: '#333', fontSize: '11px' }}>{post.post_id}</span>
+                                                {post.category && post.category !== 'unknown' && (
+                                                    <span style={{ background: catColor + '1a', color: catColor, padding: '1px 7px', borderRadius: '5px', fontSize: '10px', fontWeight: 700 }}>
+                                                        {post.category}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <span style={{ color: '#444', fontSize: '11px', flexShrink: 0 }}>{post.similarity_percentage}</span>
+                                    </div>
+
+                                    <div style={{ color: '#aaa', lineHeight: '1.5', marginBottom: '10px', fontSize: '13px' }}>{post.caption}</div>
+
+                                    <button
+                                        onClick={() => handleLike(post.post_id)}
+                                        disabled={liked}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 13px', background: liked ? '#dc2626' : '#1a1a1a', color: liked ? '#fff' : '#555', border: `1px solid ${liked ? '#dc2626' : '#222'}`, borderRadius: '18px', cursor: liked ? 'default' : 'pointer', fontSize: '12px', fontWeight: 500 }}
+                                    >
+                                        <Heart size={12} fill={liked ? '#fff' : 'none'} stroke={liked ? '#fff' : '#555'} />
+                                        {liked ? 'Liked' : 'Like'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {idx === results.length - 1 && results.length >= 8 && (
+                                <div style={{ display: 'flex', justifyContent: 'center', margin: '18px 0' }}>
+                                    <button onClick={handleNewSearch}
+                                        style={{ padding: '10px 26px', background: '#fff', color: '#000', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}>
+                                        Perform a new search
+                                    </button>
+                                </div>
+                            )}
+                        </React.Fragment>
+                    );
+                })}
+
+                <hr style={{ margin: '48px 0 32px', borderColor: '#0f0f0f' }} />
+
+                {/* RAG */}
+                {/* <h2 style={{ marginBottom: '18px', fontWeight: 500, fontSize: '18px' }}>🧠 Ask RAG</h2>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
+                    <input
+                        type="text"
+                        value={question}
+                        onChange={e => setQuestion(e.target.value)}
+                        onKeyPress={handleRagKeyPress}
+                        placeholder="Ask about the posts…"
+                        disabled={ragLoading}
+                        style={{ flex: 1, padding: '11px 14px', background: '#111', border: '1px solid #222', color: '#fff', fontSize: '15px', outline: 'none', borderRadius: '8px' }}
+                    />
+                    <button onClick={handleRagAsk} disabled={ragLoading}
+                        style={{ padding: '11px 28px', background: ragLoading ? '#333' : '#fff', color: '#000', border: 'none', cursor: ragLoading ? 'not-allowed' : 'pointer', fontSize: '15px', fontWeight: 600, borderRadius: '8px' }}>
+                        {ragLoading ? 'Thinking…' : 'Ask'}
+                    </button>
+                </div>
+
+                {ragAnswer && (
+                    <div style={{ background: '#111', padding: '18px', border: '1px solid #1a1a1a', borderRadius: '10px', marginBottom: '20px' }}>
+                        <h3 style={{ marginBottom: '14px', fontWeight: 500, fontSize: '15px' }}>Answer</h3>
+                        <div style={{ display: 'flex', gap: '18px', alignItems: 'flex-start' }}>
+                            {ragSources[0]?.media_url && (
+                                <img src={ragSources[0].media_url} alt="" style={{ width: '160px', height: '160px', objectFit: 'cover', borderRadius: '9px', flexShrink: 0 }}
+                                    onError={e => { e.target.style.display = 'none'; }} />
+                            )}
+                            <p style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6', flex: 1, margin: 0, fontSize: '13px', color: '#ccc' }}>{ragAnswer}</p>
+                        </div>
+                    </div>
+                )} */}
+
+                {ragSources.length > 0 && (
+                    <>
+                        <h3 style={{ marginBottom: '10px', fontWeight: 500, fontSize: '14px' }}>Sources ({ragSources.length})</h3>
+                        {ragSources.map((s, i) => (
+                            <div key={i} style={{ background: '#0a0a0a', padding: '14px', marginBottom: '8px', border: '1px solid #111', borderRadius: '9px', display: 'flex', gap: '12px' }}>
+                                {s.media_url && (
+                                    <img src={s.media_url} alt="" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '7px', flexShrink: 0 }}
+                                        onError={e => { e.target.style.display = 'none'; }} />
+                                )}
+                                <div style={{ flex: 1 }}>
+                                    <b style={{ fontSize: '13px' }}>{s.name}</b>
+                                    <div style={{ color: '#444', fontSize: '11px', marginBottom: '5px' }}>{s.post_id} · {s.similarity_score}</div>
+                                    <p style={{ margin: 0, color: '#888', lineHeight: '1.5', fontSize: '12px' }}>{s.caption}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </>
+                )}
+
+            </div>
+        </div>
+    );
 }
