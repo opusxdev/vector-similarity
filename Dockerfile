@@ -98,8 +98,8 @@ COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/p
 COPY --from=python-base /root/.cache /root/.cache
 
 # Copy Python requirements and install
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+# COPY requirements.txt .
+# RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy package.json and install Node.js dependencies
 COPY package*.json ./
