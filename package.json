@@ -1,0 +1,34 @@
+{
+    "name": "vector-similarity-api",
+    "version": "1.0.0",
+    "description": "Post Similarity API using Node.js/Express with vector embeddings",
+    "main": "app.js",
+    "scripts": {
+      "start": "node app.js",
+      "dev": "nodemon app.js",
+      "embedding-service": "python embedding_service.py"
+    },
+    "keywords": [
+      "vector",
+      "similarity",
+      "embeddings",
+      "social-media",
+      "api"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+      "express": "^4.18.2",
+      "cors": "^2.8.5",
+      "dotenv": "^16.3.1",
+      "axios": "^1.6.2",
+      "@qdrant/js-client-rest": "^1.7.0",
+      "mongodb": "^6.3.0"
+    },
+    "devDependencies": {
+      "nodemon": "^3.0.2"
+    },
+    "engines": {
+      "node": ">=18.0.0"
+    }
+  }

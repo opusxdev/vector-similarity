@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # Python Embedding Microservice
+  embedding-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.embedding
+    container_name: embedding-service
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Node.js Main API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.nodejs
+    container_name: vector-similarity-api
+    ports:
+      - "7860:7860"
+    environment:
+      - PORT=7860
+      - EMBEDDING_SERVICE_URL=http://embedding-service:8001
+      - MONGODB_URI=${MONGODB_URI}
+      - QDRANT_URL=${QDRANT_URL}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - NODE_ENV=production
+    depends_on:
+      - embedding-service
+    volumes:
+      - ./api:/app/api
+      - ./models:/app/models
+      - ./frontend/dist:/app/frontend/dist
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  default:
+    name: vector-similarity-network
