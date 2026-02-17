@@ -90,6 +90,7 @@ WORKDIR /app
 # Copy Python dependencies and model cache from python-base
 COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=python-base /root/.cache /root/.cache
+ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages
 
 # Copy package.json and install Node.js dependencies
 COPY package*.json ./
