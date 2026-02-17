@@ -14,7 +14,8 @@ const FRONTEND_DIST = path.join(BASE_DIR, '..', 'frontend', 'dist');
 
 app.use(express.json());
 app.use(cors({
-    origin: 'https://huggingface.co/spaces/opusdev/vector-similarity-api',
+    // origin: 'https://huggingface.co/spaces/opusdev/vector-similarity-api',
+    origin:'*',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['*']
@@ -38,7 +39,8 @@ const qdrantClient = new QdrantClient({
 
 const COLLECTION_NAME = 'social_posts';
 const LIKES_COLLECTION = 'user_likes';
-const EMBEDDING_SERVICE_URL = process.env.EMBEDDING_SERVICE_URL || 'http://localhost:8001';
+// const EMBEDDING_SERVICE_URL = process.env.EMBEDDING_SERVICE_URL || 'http://localhost:8001';        //dev
+const EMBEDDING_SERVICE_URL = process.env.EMBEDDING_SERVICE_URL || 'http://127.0.0.1:8001';
 
 (async () => {
     try {
@@ -62,10 +64,18 @@ async function getEmbedding(text) {
     try {
         const r = await axios.post(`${EMBEDDING_SERVICE_URL}/embed`, { text }, { timeout: 10000 });
         return r.data.embedding;
+    // } catch (e) {
+    //     if (e.code === 'ECONNREFUSED') throw new Error('Embedding service not running. Run: python api/embedding_service.py');
+    //     throw new Error(`Embedding failed: ${e.message}`);
+    // }
+
     } catch (e) {
-        if (e.code === 'ECONNREFUSED') throw new Error('Embedding service not running. Run: python api/embedding_service.py');
-        throw new Error(`Embedding failed: ${e.message}`);
+    const connErrors = ['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT'];
+    if (connErrors.includes(e.code) || (e.message && e.message.includes('connect'))) {
+        throw new Error(`Embedding service unreachable at ${EMBEDDING_SERVICE_URL} (${e.code})`);
     }
+    throw new Error(`Embedding failed: ${e.message}`);
+}
 }
 
 async function generateLLMAnswer(prompt) {
