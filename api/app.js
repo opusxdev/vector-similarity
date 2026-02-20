@@ -39,7 +39,7 @@ const qdrantClient = new QdrantClient({
 const COLLECTION_NAME = "social_posts";
 const LIKES_COLLECTION = "user_likes";
 const EMBEDDING_SERVICE_URL =
-  process.env.EMBEDDING_SERVICE_URL || "http://localhost:8001";
+  process.env.EMBEDDING_SERVICE_URL || "http://embedding-service:8001";
 
 (async () => {
   try {
