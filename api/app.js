@@ -41,6 +41,11 @@ const LIKES_COLLECTION = "user_likes";
 const EMBEDDING_SERVICE_URL =
   process.env.EMBEDDING_SERVICE_URL || "http://embedding-service:8001";
 
+  console.log("ENVIRONMENT VARIABLES LOADED:");
+console.log("  EMBEDDING_SERVICE_URL:", process.env.EMBEDDING_SERVICE_URL);
+console.log("  NODE_ENV:", process.env.NODE_ENV);
+console.log("  PORT:", process.env.PORT);
+
 (async () => {
   try {
     const r = await axios.get(`${EMBEDDING_SERVICE_URL}/health`, {
