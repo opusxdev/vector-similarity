@@ -35,6 +35,15 @@ const qdrantClient = new QdrantClient({
   apiKey: process.env.QDRANT_API_KEY,
   checkCompatibility: false,
 });
+const { spawn } = require('child_process');
+
+// Start embedding service if not already running
+const embeddingProc = spawn('python', ['api/embedding_service.py'], {
+  stdio: 'inherit',
+  detached: false,
+});
+embeddingProc.on('error', (err) => console.error('Failed to start embedding service:', err));
+process.on('exit', () => embeddingProc.kill());
 const COLLECTION_NAME = "social_posts";
 const LIKES_COLLECTION = "user_likes";
 const EMBEDDING_SERVICE_URL =
