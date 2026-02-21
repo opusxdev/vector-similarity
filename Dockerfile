@@ -161,8 +161,8 @@ COPY .env* ./
 
 EXPOSE 7860 8001
 
-# Improved start script with better error handling
-RUN cat > /app/start.sh << 'SCRIPT'
+# Create and make executable the start script
+RUN cat > /app/start.sh << 'SCRIPT' && chmod +x /app/start.sh
 #!/bin/bash
 set -e
 
@@ -190,6 +190,5 @@ done
 echo "Starting Node.js API..."
 exec node api/app.js
 SCRIPT
-chmod +x /app/start.sh
 
 CMD ["/app/start.sh"]
