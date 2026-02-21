@@ -145,6 +145,10 @@ WORKDIR /app
 COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=python-base /root/.cache /root/.cache
 ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages
+# In the monolithic single-container setup (HF Spaces), the embedding
+# service runs as a background process on localhost — NOT as a separate
+# Docker Compose container with its own hostname.
+ENV EMBEDDING_SERVICE_URL=http://localhost:8001
 
 # Copy package.json and install Node.js dependencies
 COPY package*.json ./
