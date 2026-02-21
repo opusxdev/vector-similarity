@@ -45,47 +45,34 @@ const qdrantClient = new QdrantClient({
 const COLLECTION_NAME = "social_posts";
 const LIKES_COLLECTION = "user_likes";
 
-// Resolve the effective embedding URL at startup.
-// If the configured URL uses the docker-compose container hostname
-// ("embedding-service") but we're running as a single container
-// (HF Spaces), that hostname won't resolve. We detect this and
-// automatically fall back to localhost:8001.
-let EMBEDDING_SERVICE_URL =
-  process.env.EMBEDDING_SERVICE_URL || "http://localhost:8001";
-
-console.log("ENVIRONMENT VARIABLES LOADED:");
-console.log("  EMBEDDING_SERVICE_URL (raw):", process.env.EMBEDDING_SERVICE_URL);
-console.log("  NODE_ENV:", process.env.NODE_ENV);
-console.log("  PORT:", process.env.PORT);
-
-(async () => {
-  // --- Embedding service health probe with automatic localhost fallback ---
-  const LOCALHOST_FALLBACK = "http://localhost:8001";
-  let embedOk = false;
-
+// ── In-process embedding via @xenova/transformers ────────────────────────────
+// Runs all-MiniLM-L6-v2 directly inside this Node.js process.
+// No Python sidecar, no HTTP calls, no ECONNREFUSED / ENOTFOUND errors.
+let _embedder = null;
+const _embedderReady = (async () => {
   try {
-    const r = await axios.get(`${EMBEDDING_SERVICE_URL}/health`, { timeout: 5000 });
-    console.log(`Embedding OK at ${EMBEDDING_SERVICE_URL}: ${r.data.model}`);
-    embedOk = true;
+    const { pipeline, env } = await import("@xenova/transformers");
+    // Use model pre-cached at Docker build time; never hit the network at runtime
+    env.cacheDir = process.env.XENOVA_CACHE_DIR || "/app/.cache/xenova";
+    env.localFilesOnly = true;
+    console.log("Loading embedding model (Xenova/all-MiniLM-L6-v2)...");
+    _embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
+    console.log("✓ Embedding model ready (384-dim, in-process)");
   } catch (e) {
-    console.error(`Embedding unreachable at ${EMBEDDING_SERVICE_URL} (${e.code || e.message})`);
-
-    // If the configured URL is NOT already pointing to localhost, try localhost
-    if (!EMBEDDING_SERVICE_URL.includes("localhost") && !EMBEDDING_SERVICE_URL.includes("127.0.0.1")) {
-      console.log(`  → Retrying with fallback: ${LOCALHOST_FALLBACK}`);
-      try {
-        const r2 = await axios.get(`${LOCALHOST_FALLBACK}/health`, { timeout: 5000 });
-        console.log(`  ✓ Fallback succeeded — switching to ${LOCALHOST_FALLBACK}`);
-        EMBEDDING_SERVICE_URL = LOCALHOST_FALLBACK; // self-correct for all future calls
-        embedOk = true;
-        console.log(`  NOTE: Fix your HF Space env var: EMBEDDING_SERVICE_URL=${LOCALHOST_FALLBACK}`);
-      } catch (e2) {
-        console.error(`  ✗ Fallback also failed (${e2.code || e2.message}) — embedding will be unavailable`);
-      }
-    }
+    console.error("✗ Embedding model failed to load:", e.message);
   }
+})();
 
-  // --- Qdrant likes collection init ---
+async function getEmbedding(text) {
+  await _embedderReady;
+  if (!_embedder) throw new Error("Embedding model unavailable — check build logs");
+  const output = await _embedder(text, { pooling: "mean", normalize: true });
+  return Array.from(output.data);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Qdrant: ensure user_likes collection exists
+(async () => {
   try {
     await qdrantClient.createCollection(LIKES_COLLECTION, {
       vectors: { size: 384, distance: "Cosine" },
@@ -95,23 +82,6 @@ console.log("  PORT:", process.env.PORT);
     console.log(`  ${LIKES_COLLECTION} exists`);
   }
 })();
-
-// utilssss
-async function getEmbedding(text) {
-  try {
-    const r = await axios.post(
-      `${EMBEDDING_SERVICE_URL}/embed`,
-      { text },
-      { timeout: 10000 },
-    );
-    return r.data.embedding;
-  } catch (e) {
-    const conn = ["ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "ETIMEDOUT"];
-    if (conn.includes(e.code) || e.message?.includes("connect"))
-      throw new Error(`Embedding unreachable (${e.code})`);
-    throw new Error(`Embedding failed: ${e.message}`);
-  }
-}
 
 async function generateLLMAnswer(prompt) {
   const r = await axios.post(
@@ -1074,13 +1044,13 @@ app.get("/health", async (req, res) => {
       return "unhealthy";
     }
   };
-  const [m, q, e] = await Promise.all([
+  const [m, q] = await Promise.all([
     ok(() => Post.getAllPosts()),
     ok(() => qdrantClient.getCollection(COLLECTION_NAME)),
-    ok(() => axios.get(`${EMBEDDING_SERVICE_URL}/health`, { timeout: 3000 })),
   ]);
+  const e = _embedder ? "healthy" : "loading";
   res.json({
-    status: [m, q, e].every((s) => s === "healthy") ? "healthy" : "degraded",
+    status: [m, q].every((s) => s === "healthy") && _embedder ? "healthy" : "degraded",
     services: { mongodb: m, qdrant: q, embedding: e },
   });
 });

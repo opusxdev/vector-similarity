@@ -119,88 +119,45 @@
 
 
 
-# v3 
-FROM python:3.11-slim as python-base
-
-WORKDIR /app/python
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
-
-# Download the embedding model at build time
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
-
-# Node.js stage
+# ── Production image: Node.js only ───────────────────────────────────────────
+# Embedding runs in-process via @xenova/transformers (ONNX) — no Python needed.
 FROM node:18-slim
 
-# Install Python runtime + curl (needed for health check)
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# curl kept for the HF Spaces health check endpoint
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy Python dependencies and model cache from python-base
-COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=python-base /root/.cache /root/.cache
-ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages
-# In the monolithic single-container setup (HF Spaces), the embedding
-# service runs as a background process on localhost — NOT as a separate
-# Docker Compose container with its own hostname.
-ENV EMBEDDING_SERVICE_URL=http://localhost:8001
-
-# Copy package.json and install Node.js dependencies
+# Install Node.js deps (cached layer — only rebuilt when package*.json changes)
 COPY package*.json ./
 RUN npm install --production
 
-# ─── CACHE BUSTER ─────────────────────────────────────────────────────────────
-# Change this value (e.g. bump the date) whenever you push new code to HF Spaces
-# and want to guarantee Docker rebuilds from this layer onwards, bypassing cache.
-# Format: YYYY-MM-DD.N  (N = build number that day)
-ARG CACHEBUST=2026-02-21.1
+# ── CACHE BUSTER: bump to force HF Spaces to pick up new source code ──────────
+# Change the value (e.g. date + build number) before each push when you want
+# Docker to bypass its layer cache for all COPY/RUN steps below this line.
+ARG CACHEBUST=2026-02-21.3
 RUN echo "Cache bust: $CACHEBUST"
-# ──────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Copy application files (always fresh after CACHEBUST changes)
+# Copy application source
 COPY api/app.js ./api/
-COPY api/embedding_service.py ./api/
 COPY models/ ./models/
 COPY frontend/dist ./frontend/dist
 
-# NOTE: .env is in .dockerignore so COPY .env* is a no-op — env vars must be
-# set via HF Space "Variables and Secrets" or baked in as ENV below.
+# Pre-download Xenova/all-MiniLM-L6-v2 at BUILD time.
+# Sets env.localFilesOnly=true at runtime (see app.js) so no outbound
+# network calls are ever made when the container is actually running.
+ENV XENOVA_CACHE_DIR=/app/.cache/xenova
+RUN node -e "\
+import('@xenova/transformers').then(async ({ pipeline, env }) => {\
+  env.cacheDir = '/app/.cache/xenova';\
+  console.log('Downloading Xenova/all-MiniLM-L6-v2 ...');\
+  const p = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');\
+  const t = await p('warmup', { pooling: 'mean', normalize: true });\
+  console.log('Model ready — dimension:', t.data.length);\
+  process.exit(0);\
+}).catch(e => { console.error(e.message); process.exit(1); });"
 
-EXPOSE 7860 8001
+EXPOSE 7860
 
-# Create and make executable the start script
-RUN cat > /app/start.sh << 'SCRIPT' && chmod +x /app/start.sh
-#!/bin/bash
-set -e
-
-echo "Starting embedding service in background..."
-python3 api/embedding_service.py &
-EMBED_PID=$!
-
-echo "Waiting for embedding service to be ready..."
-for i in {1..30}; do
-  if curl -sf http://localhost:8001/health > /dev/null 2>&1; then
-    echo "✓ Embedding service ready after $i attempts"
-    break
-  fi
-  
-  if [ $i -eq 30 ]; then
-    echo "✗ Embedding service failed to start after 30 attempts"
-    kill $EMBED_PID 2>/dev/null || true
-    exit 1
-  fi
-  
-  echo "  Attempt $i/30 - waiting..."
-  sleep 2
-done
-
-echo "Starting Node.js API..."
-exec node api/app.js
-SCRIPT
-
-CMD ["/app/start.sh"]
+CMD ["node", "api/app.js"]
