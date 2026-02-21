@@ -120,8 +120,6 @@
 
 
 # v3 
-# Multi-stage Dockerfile for Node.js + Python hybrid setup
-
 FROM python:3.11-slim as python-base
 
 WORKDIR /app/python
@@ -164,7 +162,7 @@ COPY .env* ./
 EXPOSE 7860 8001
 
 # Improved start script with better error handling
-RUN cat > /app/start.sh << 'EOF'
+RUN cat > /app/start.sh << 'SCRIPT'
 #!/bin/bash
 set -e
 
