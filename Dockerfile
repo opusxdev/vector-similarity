@@ -191,8 +191,7 @@ done
 
 echo "Starting Node.js API..."
 exec node api/app.js
-EOF
-
+SCRIPT
 chmod +x /app/start.sh
 
 CMD ["/app/start.sh"]
