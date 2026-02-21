@@ -154,14 +154,22 @@ ENV EMBEDDING_SERVICE_URL=http://localhost:8001
 COPY package*.json ./
 RUN npm install --production
 
-# Copy application files
+# ─── CACHE BUSTER ─────────────────────────────────────────────────────────────
+# Change this value (e.g. bump the date) whenever you push new code to HF Spaces
+# and want to guarantee Docker rebuilds from this layer onwards, bypassing cache.
+# Format: YYYY-MM-DD.N  (N = build number that day)
+ARG CACHEBUST=2026-02-21.1
+RUN echo "Cache bust: $CACHEBUST"
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Copy application files (always fresh after CACHEBUST changes)
 COPY api/app.js ./api/
 COPY api/embedding_service.py ./api/
 COPY models/ ./models/
 COPY frontend/dist ./frontend/dist
 
-# Only copy .env if it exists
-COPY .env* ./
+# NOTE: .env is in .dockerignore so COPY .env* is a no-op — env vars must be
+# set via HF Space "Variables and Secrets" or baked in as ENV below.
 
 EXPOSE 7860 8001
 
