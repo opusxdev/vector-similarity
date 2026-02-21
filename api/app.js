@@ -21,6 +21,12 @@ app.use(
     allowedHeaders: ["*"],
   }),
 );
+app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
 app.use("/assets", express.static(path.join(FRONTEND_DIST, "assets")));
 
 const REQUIRED_ENV = ["QDRANT_URL", "QDRANT_API_KEY", "GROQ_API_KEY"];
