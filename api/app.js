@@ -44,24 +44,48 @@ const qdrantClient = new QdrantClient({
 
 const COLLECTION_NAME = "social_posts";
 const LIKES_COLLECTION = "user_likes";
-const EMBEDDING_SERVICE_URL =
+
+// Resolve the effective embedding URL at startup.
+// If the configured URL uses the docker-compose container hostname
+// ("embedding-service") but we're running as a single container
+// (HF Spaces), that hostname won't resolve. We detect this and
+// automatically fall back to localhost:8001.
+let EMBEDDING_SERVICE_URL =
   process.env.EMBEDDING_SERVICE_URL || "http://localhost:8001";
 
-  console.log("ENVIRONMENT VARIABLES LOADED:");
-console.log("  EMBEDDING_SERVICE_URL:", process.env.EMBEDDING_SERVICE_URL);
+console.log("ENVIRONMENT VARIABLES LOADED:");
+console.log("  EMBEDDING_SERVICE_URL (raw):", process.env.EMBEDDING_SERVICE_URL);
 console.log("  NODE_ENV:", process.env.NODE_ENV);
 console.log("  PORT:", process.env.PORT);
 
-
 (async () => {
+  // --- Embedding service health probe with automatic localhost fallback ---
+  const LOCALHOST_FALLBACK = "http://localhost:8001";
+  let embedOk = false;
+
   try {
-    const r = await axios.get(`${EMBEDDING_SERVICE_URL}/health`, {
-      timeout: 5000,
-    });
-    console.log(`Embedding OK: ${r.data.model}`);
-  } catch {
-    console.error(`embedding unreachable at ${EMBEDDING_SERVICE_URL}`);
+    const r = await axios.get(`${EMBEDDING_SERVICE_URL}/health`, { timeout: 5000 });
+    console.log(`Embedding OK at ${EMBEDDING_SERVICE_URL}: ${r.data.model}`);
+    embedOk = true;
+  } catch (e) {
+    console.error(`Embedding unreachable at ${EMBEDDING_SERVICE_URL} (${e.code || e.message})`);
+
+    // If the configured URL is NOT already pointing to localhost, try localhost
+    if (!EMBEDDING_SERVICE_URL.includes("localhost") && !EMBEDDING_SERVICE_URL.includes("127.0.0.1")) {
+      console.log(`  → Retrying with fallback: ${LOCALHOST_FALLBACK}`);
+      try {
+        const r2 = await axios.get(`${LOCALHOST_FALLBACK}/health`, { timeout: 5000 });
+        console.log(`  ✓ Fallback succeeded — switching to ${LOCALHOST_FALLBACK}`);
+        EMBEDDING_SERVICE_URL = LOCALHOST_FALLBACK; // self-correct for all future calls
+        embedOk = true;
+        console.log(`  NOTE: Fix your HF Space env var: EMBEDDING_SERVICE_URL=${LOCALHOST_FALLBACK}`);
+      } catch (e2) {
+        console.error(`  ✗ Fallback also failed (${e2.code || e2.message}) — embedding will be unavailable`);
+      }
+    }
   }
+
+  // --- Qdrant likes collection init ---
   try {
     await qdrantClient.createCollection(LIKES_COLLECTION, {
       vectors: { size: 384, distance: "Cosine" },
@@ -223,7 +247,7 @@ function pickRandomPosts(allPosts, usedPostIds, count) {
   const pool = allPosts.filter(
     (p) => p.payload?.post_id && !usedPostIds.has(p.payload.post_id),
   );
-// shuffler
+  // shuffler
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -247,7 +271,7 @@ async function buildInterestPosts(rankedInterests, usedPostIds, slotCount) {
       .map((pid) => parseInt(pid.replace("post_", "")))
       .filter((n) => !isNaN(n));
 
-//vectrRetieveal
+    //vectrRetieveal
     let retrieved = [];
     try {
       retrieved = await qdrantClient.retrieve(COLLECTION_NAME, {
@@ -267,10 +291,10 @@ async function buildInterestPosts(rankedInterests, usedPostIds, slotCount) {
         const weight =
           evIdx >= 0
             ? likeWeight(
-                interest.events[evIdx].timestamp,
-                evIdx,
-                interest.events.length,
-              )
+              interest.events[evIdx].timestamp,
+              evIdx,
+              interest.events.length,
+            )
             : 0.5;
         return { vector: r.vector, weight };
       })
@@ -462,19 +486,19 @@ Format your response ONLY as valid JSON, no additional text.`;
 async function generateStructuredRAGAnswer(question, contextBlocks, sourceData) {
   try {
     const prompt = RAG_ANALYSIS_PROMPT(question, contextBlocks, sourceData);
-    
+
     const response = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
         model: "llama-3.1-8b-instant",
         messages: [
-          { 
-            role: "system", 
-            content: RAG_SYSTEM_PROMPT 
+          {
+            role: "system",
+            content: RAG_SYSTEM_PROMPT
           },
-          { 
-            role: "user", 
-            content: prompt 
+          {
+            role: "user",
+            content: prompt
           },
         ],
         temperature: 0.7,
@@ -490,13 +514,13 @@ async function generateStructuredRAGAnswer(question, contextBlocks, sourceData) 
     );
 
     const content = response.data.choices[0].message.content.trim();
-    
+
     // Parse JSON response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error("Invalid JSON response from LLM");
     }
-    
+
     return JSON.parse(jsonMatch[0]);
   } catch (error) {
     console.error("Error generating structured RAG answer:", error.message);
@@ -507,7 +531,7 @@ async function generateStructuredRAGAnswer(question, contextBlocks, sourceData) 
 app.post("/rag", async (req, res) => {
   try {
     const { question, limit = 5, min_score = 0.1, user_id = "default_user" } = req.body;
-    
+
     if (!question?.trim()) {
       return res.status(400).json({ detail: "Question required" });
     }
@@ -543,9 +567,9 @@ app.post("/rag", async (req, res) => {
     const allSourcePosts = [];
 
     hits.forEach((hit, index) => {
-      const { 
-        caption = "", 
-        name = "", 
+      const {
+        caption = "",
+        name = "",
         post_id = "",
         media_url = "",
         media_type = "image",
@@ -646,7 +670,7 @@ app.post("/rag", async (req, res) => {
     res.json(response);
   } catch (error) {
     console.error("RAG error:", error.message);
-    res.status(500).json({ 
+    res.status(500).json({
       detail: error.message,
       hint: "Check that GROQ_API_KEY and Qdrant connection are properly configured"
     });
