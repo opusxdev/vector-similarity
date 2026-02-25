@@ -11,6 +11,8 @@ services:
       - "8001:8001"
     environment:
       - PORT=8001
+    networks:                     
+      - default
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -35,7 +37,10 @@ services:
       - GROQ_API_KEY=${GROQ_API_KEY}
       - NODE_ENV=production
     depends_on:
-      - embedding-service
+      embedding-service:               
+        condition: service_healthy     
+    networks:                          
+      - default
     volumes:
       - ./api:/app/api
       - ./models:/app/models
@@ -50,3 +55,4 @@ services:
 networks:
   default:
     name: vector-similarity-network
+    driver: bridge                    

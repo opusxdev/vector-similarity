@@ -1,3 +1,24 @@
+# FROM python:3.11-slim
+
+# WORKDIR /app
+
+# # Install dependencies
+# COPY requirements.txt .
+# RUN pip install --no-cache-dir -r requirements.txt
+
+# # Download model at build time
+# RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
+# # Copy embedding service
+# COPY api/embedding_service.py ./
+
+# EXPOSE 8001
+
+# CMD ["python", "embedding_service.py"]
+
+
+
+
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -9,9 +30,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Download model at build time
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
-# Copy embedding service
-COPY api/embedding_service.py ./
+# Copy embedding service - CORRECTED
+COPY api/embedding_service.py ./embedding_service.py
 
 EXPOSE 8001
 
+# Health check endpoint
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8001/health', timeout=5).raise_for_status()" || exit 1
+
+# Run the service
 CMD ["python", "embedding_service.py"]
