@@ -1,7 +1,128 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Heart } from "lucide-react";
 
-const API_BASE = "";
+function CategorySelector({ categories, onApply, onSkip }) {
+  const [selected, setSelected] = useState([]);
+  const handleSelect = (cat) => {
+    setSelected((prev) =>
+      prev.includes(cat)
+        ? prev.filter((c) => c !== cat)
+        : prev.length < 3
+        ? [...prev, cat]
+        : prev
+    );
+  };
+  return (
+    <div style={{
+      background: '#0a0a0a',
+      border: '1px solid #1a1a1a',
+      borderRadius: 12,
+      padding: '40px 32px',
+      maxWidth: 500,
+      margin: '40px auto',
+      boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)',
+      textAlign: 'center',
+      animation: 'fadeInUp 0.6s ease-out'
+    }}>
+      <style>{`
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(15px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+      <h2 style={{ 
+        fontSize: '28px',
+        fontWeight: 400,
+        marginBottom: '8px',
+        background: 'linear-gradient(to bottom,#10775f,#139c77,#33b89b)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        letterSpacing: '-0.5px'
+      }}>Select Interests</h2>
+      <p style={{ 
+        color: '#666', 
+        fontSize: '13px', 
+        marginBottom: 32,
+        lineHeight: '1.5'
+      }}>The algorithm needs a starting point. Choose 3 categories to begin your personalized feed.</p>
+      
+      <div style={{ 
+        display: 'flex', 
+        flexWrap: 'wrap', 
+        gap: 8, 
+        justifyContent: 'center', 
+        marginBottom: 36 
+      }}>
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            onClick={() => handleSelect(cat)}
+            style={{
+              background: selected.includes(cat) ? '#33b89b' : '#111',
+              color: selected.includes(cat) ? '#000' : '#888',
+              border: '1px solid',
+              borderColor: selected.includes(cat) ? '#33b89b' : '#222',
+              borderRadius: 6,
+              padding: '7px 14px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontSize: '12px',
+              transition: 'all 0.2s ease',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+      
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+        <button
+          onClick={() => onApply(selected)}
+          disabled={selected.length !== 3}
+          style={{
+            background: selected.length === 3 ? '#fff' : '#1a1a1a',
+            color: selected.length === 3 ? '#000' : '#444',
+            border: 'none',
+            borderRadius: 8,
+            padding: '12px 32px',
+            fontWeight: 700,
+            fontSize: '14px',
+            cursor: selected.length === 3 ? 'pointer' : 'not-allowed',
+            transition: 'all 0.3s ease',
+            flex: 1,
+            textTransform: 'uppercase'
+          }}
+        >Initialize Feed</button>
+        <button
+          onClick={onSkip}
+          style={{
+            background: 'transparent',
+            color: '#444',
+            border: '1px solid #222',
+            borderRadius: 8,
+            padding: '12px 24px',
+            fontWeight: 600,
+            fontSize: '14px',
+            cursor: 'pointer',
+            transition: 'all 0.3s ease',
+            textTransform: 'uppercase'
+          }}
+          onMouseOver={(e) => e.target.style.color = '#fff'}
+          onMouseOut={(e) => e.target.style.color = '#444'}
+        >Skip</button>
+      </div>
+    </div>
+  );
+}
+
+// List of all categories
+const ALL_CATEGORIES = [
+  'nature', 'tech', 'healthcare', 'food', 'art', 'education', 'travel', 'music', 'sports', 'ai', 'web3', 'socialmedia', 'finance', 'movies', 'stocks', 'vehicles', 'cafes'
+];
+
+const API_BASE = "http://localhost:7860";
 const USER_ID = "default_user";
 
 const SOURCE_BADGE = {
@@ -540,6 +661,61 @@ function RAGResponse({ data, loading }) {
 }
 
 export default function App() {
+    const [showCatSelector, setShowCatSelector] = useState(() => {
+      return sessionStorage.getItem('first_search_done') !== 'true';
+    });
+    
+    const handleApplyInitialCats = async (selectedCats) => {
+      sessionStorage.setItem('first_search_done', 'true');
+      setShowCatSelector(false);
+      try {
+        const res = await fetch(API_BASE + '/posts');
+        const data = await res.json();
+        const allPosts = data.posts || [];
+        let catPosts = [];
+        selectedCats.forEach(cat => {
+          const filtered = allPosts
+            .filter((p) => (p.category || '').toLowerCase() === cat.toLowerCase())
+            .map((p) => ({ ...p, source: 'query' }));
+          
+          const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+          catPosts = catPosts.concat(shuffled.slice(0, 2));
+        });
+
+        const otherPosts = allPosts
+          .filter((p) => !selectedCats.includes((p.category || '').toLowerCase()))
+          .map((p) => ({ ...p, source: 'random' }))
+          .sort(() => Math.random() - 0.5);
+
+        const randomFour = otherPosts.slice(0, 4);
+        let postsToShow = [...catPosts, ...randomFour];
+
+        postsToShow.sort(() => Math.random() - 0.5);
+        setResults(postsToShow);
+        setBreakdown({
+          budget: { query: catPosts.length, interest: 0, random: randomFour.length },
+          query_based: catPosts.length,
+          interest_based: 0,
+          random: randomFour.length,
+          total: postsToShow.length,
+          ranked_interests: [],
+        });
+        setShowBento(false);
+      } catch (err) {
+        console.error('[init cats]', err);
+        setError('Failed to load initial posts');
+      }
+    };
+
+    const handleSkipInitialCats = () => {
+      sessionStorage.setItem('first_search_done', 'true');
+      setShowCatSelector(false);
+    };
+    useEffect(() => {
+      if (sessionStorage.getItem('first_search_done') !== 'true') {
+        setShowCatSelector(true);
+      }
+    }, []);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -839,6 +1015,14 @@ export default function App() {
             {loading ? "…" : "Search"}
           </button>
         </div>
+
+        {showCatSelector && (
+          <CategorySelector
+            categories={ALL_CATEGORIES}
+            onApply={handleApplyInitialCats}
+            onSkip={handleSkipInitialCats}
+          />
+        )}
 
         {showBento && results.length === 0 && !loading && (
           <div>
