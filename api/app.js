@@ -12,7 +12,7 @@ const app = express();
 const BASE_DIR = __dirname;
 const FRONTEND_DIST = path.join(BASE_DIR, "..", "frontend", "dist");
 
-app.use(express.json());
+app.use(express.json())
 app.use(
   cors({
     origin: "*",
@@ -45,33 +45,28 @@ const qdrantClient = new QdrantClient({
 const COLLECTION_NAME = "social_posts";
 const LIKES_COLLECTION = "user_likes";
 
-// ── In-process embedding via @xenova/transformers ────────────────────────────
-// Runs all-MiniLM-L6-v2 directly inside this Node.js process.
-// No Python sidecar, no HTTP calls, no ECONNREFUSED / ENOTFOUND errors.
 let _embedder = null;
 const _embedderReady = (async () => {
   try {
     const { pipeline, env } = await import("@xenova/transformers");
-    // Use model pre-cached at Docker build time; never hit the network at runtime
-    env.cacheDir = process.env.XENOVA_CACHE_DIR || "/app/.cache/xenova";
-    env.localFilesOnly = true;
+    env.cacheDir = process.env.XENOVA_CACHE_DIR || "./.cache/xenova";
+    env.localFilesOnly = false;
     console.log("Loading embedding model (Xenova/all-MiniLM-L6-v2)...");
     _embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
-    console.log("✓ Embedding model ready (384-dim, in-process)");
+    console.log("embedding model ready (384-dim, in-process)");
   } catch (e) {
-    console.error("✗ Embedding model failed to load:", e.message);
+    console.error("Embedding model failed to load:", e.message);
+    console.error("Make sure @xenova/transformers is installed and internet is available");
   }
 })();
 
 async function getEmbedding(text) {
   await _embedderReady;
-  if (!_embedder) throw new Error("Embedding model unavailable — check build logs");
+  if (!_embedder) throw new Error("Embedding model unavailable check build logs");
   const output = await _embedder(text, { pooling: "mean", normalize: true });
   return Array.from(output.data);
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
-// Qdrant: ensure user_likes collection exists
 (async () => {
   try {
     await qdrantClient.createCollection(LIKES_COLLECTION, {
@@ -374,7 +369,6 @@ function assembleFeed(queryPosts, interestPosts, randomPosts) {
   return result;
 }
 
-// prompt and template for ai 
 const RAG_SYSTEM_PROMPT = `You are an intelligent AI assistant specialized in analyzing social media posts and providing insightful answers. 
 
 BEHAVIOR GUIDELINES:
@@ -484,8 +478,6 @@ async function generateStructuredRAGAnswer(question, contextBlocks, sourceData) 
     );
 
     const content = response.data.choices[0].message.content.trim();
-
-    // Parse JSON response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error("Invalid JSON response from LLM");
@@ -509,10 +501,8 @@ app.post("/rag", async (req, res) => {
     console.log(`\n${"═".repeat(60)}`);
     console.log(`RAG REQUEST: "${question}" | user=${user_id} | limit=${limit}`);
 
-    // Step 1: Get embeddings for the question
     const questionEmbedding = await getEmbedding(question);
 
-    // Step 2: Search for relevant posts
     const hits = await qdrantClient.search(COLLECTION_NAME, {
       vector: questionEmbedding,
       limit: Math.max(limit, 5),
@@ -531,7 +521,6 @@ app.post("/rag", async (req, res) => {
       });
     }
 
-    // Step 3: Prepare context blocks and source data
     const contextBlocks = [];
     const sourceData = [];
     const allSourcePosts = [];
@@ -546,11 +535,9 @@ app.post("/rag", async (req, res) => {
         category = "unknown"
       } = hit.payload;
 
-      // Build context for LLM
       const contextBlock = `[Post ${index + 1}] Author: ${name} | Category: ${category}\nContent: ${caption}`;
       contextBlocks.push(contextBlock);
 
-      // Store source data for reference
       sourceData.push({
         post_id,
         name,
@@ -562,7 +549,6 @@ app.post("/rag", async (req, res) => {
         similarity_percentage: `${Math.round(hit.score * 10000) / 100}%`,
       });
 
-      // Add to all posts (we'll select first as featured, rest for bottom)
       allSourcePosts.push({
         post_id,
         name,
@@ -573,15 +559,12 @@ app.post("/rag", async (req, res) => {
         similarity_score: Math.round(hit.score * 10000) / 10000,
       });
     });
-
-    // Step 4: Generate structured answer using LLM with system prompt
     let analysisResult;
     try {
       analysisResult = await generateStructuredRAGAnswer(question, contextBlocks, sourceData);
       console.log(`RAG Analysis generated successfully`);
     } catch (error) {
       console.error("Failed to generate structured analysis:", error.message);
-      // Fallback response
       analysisResult = {
         key_insights: contextBlocks.slice(0, 5).map((block, i) => ({
           point: `Post insight ${i + 1}`,
@@ -658,11 +641,26 @@ app.get("/", (req, res) =>
 app.get("/random", async (req, res) => {
   try {
     const count = Math.min(parseInt(req.query.count) || 12, 50);
-    const all = await scrollAllPosts();
+    const categories = req.query.categories
+      ? req.query.categories.split(",").map((c) => c.trim().toLowerCase())
+      : [];
+
+    let all = await scrollAllPosts();
+
+    // Filter by categories if provided
+    if (categories.length > 0) {
+      all = all.filter(
+        (p) => categories.includes((p.payload.category || "").toLowerCase()),
+      );
+      console.log(`[random] filtered by ${categories.length} cats, found ${all.length} posts`);
+    }
+
+    // Shuffle
     for (let i = all.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [all[i], all[j]] = [all[j], all[i]];
     }
+
     res.json({
       total: count,
       posts: all.slice(0, count).map((p) => ({
@@ -675,6 +673,7 @@ app.get("/random", async (req, res) => {
       })),
     });
   } catch (e) {
+    console.error("/random error:", e);
     res.status(500).json({ detail: e.message });
   }
 });
@@ -848,10 +847,103 @@ app.post("/search", async (req, res) => {
       min_score = 0.0,
       user_id = "default_user",
       session_like_events = [],
+      initial_categories = [],
     } = req.body;
-    if (!query?.trim())
+    
+    // Allow empty query only if initial_categories are provided
+    if (!query?.trim() && (!initial_categories || initial_categories.length === 0))
       return res.status(400).json({ detail: "Query cannot be empty" });
 
+    // FIRST SEARCH with initial categories: 2 posts per selected category (6 total) + 4 random from OTHER categories
+    if (initial_categories && initial_categories.length > 0) {
+      console.log(`\n${"═".repeat(60)}`);
+      console.log(`FIRST SEARCH with initial categories: ${initial_categories.join(", ")}`);
+      
+      const allPosts = await scrollAllPosts();
+      const usedPostIds = new Set();
+      
+      const catResults = [];
+      
+      // Get exactly 2 posts per selected category
+      for (const selectedCat of initial_categories) {
+        const lowerCat = selectedCat.toLowerCase();
+        const postsInCat = allPosts.filter((p) => 
+          (p.payload.category || "").toLowerCase() === lowerCat
+        );
+        
+        // Shuffle posts in this category
+        for (let i = postsInCat.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [postsInCat[i], postsInCat[j]] = [postsInCat[j], postsInCat[i]];
+        }
+        
+        // Take first 2 posts from this category
+        for (let i = 0; i < Math.min(2, postsInCat.length); i++) {
+          const pid = postsInCat[i].payload?.post_id;
+          if (pid && !usedPostIds.has(pid)) {
+            catResults.push(shapePost(postsInCat[i].payload, 0, "query"));
+            usedPostIds.add(pid);
+          }
+        }
+      }
+      
+      // Get 4 random posts from categories OTHER than selected
+      const otherCategoryPosts = allPosts.filter((p) => {
+        const cat = (p.payload.category || "").toLowerCase();
+        return !initial_categories.includes(cat) && !usedPostIds.has(p.payload.post_id);
+      });
+      
+      // Shuffle other category posts
+      for (let i = otherCategoryPosts.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [otherCategoryPosts[i], otherCategoryPosts[j]] = [otherCategoryPosts[j], otherCategoryPosts[i]];
+      }
+      
+      const randomResults = otherCategoryPosts.slice(0, 4).map((p) => {
+        usedPostIds.add(p.payload.post_id);
+        return shapePost(p.payload, 0, "random");
+      });
+      
+      // Mix/shuffle the 6+4 so categories aren't obviously grouped
+      const combined = [...catResults, ...randomResults];
+      
+      // Fisher-Yates shuffle (2 passes for better randomization)
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = combined.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [combined[i], combined[j]] = [combined[j], combined[i]];
+        }
+      }
+      
+      const feed = combined.slice(0, 10);
+      
+      // Log actual order for debugging
+      const actualOrder = feed.map((p, idx) => `${idx+1}:${p.post_id}(${p.source})`).join(" ");
+      console.log(`[first search] 2 per category + 4 other: ${actualOrder}`);
+      
+      const breakdown = {
+        total: feed.length,
+        query_based: feed.filter((r) => r.source === "query").length,
+        interest_based: 0,
+        random: feed.filter((r) => r.source === "random").length,
+        budget: { query: 6, interest: 0, random: 4 },
+        ranked_interests: [],
+      };
+      
+      console.log(
+        `FIRST SEARCH FINAL (${feed.length}): q=${breakdown.query_based} r=${breakdown.random}`,
+      );
+      
+      return res.json({
+        query,
+        user_id,
+        total_results: feed.length,
+        breakdown,
+        results: feed,
+      });
+    }
+
+    // NORMAL SEARCH: regular budget/ranking logic
     // Computingg interest ranking fresh on every search
     const rankedInterests = computeInterestRanking(session_like_events);
     const budget = computeBudget(rankedInterests);

@@ -39,6 +39,25 @@ const CATEGORY_COLOR = {
   stocks: "#84cc16",
   crypto: "#f59e0b",
 };
+const INITIAL_CATEGORIES = [
+  "nature",
+  "tech",
+  "healthcare",
+  "food",
+  "art",
+  "education",
+  "travel",
+  "music",
+  "sports",
+  "ai",
+  "web3",
+  "socialmedia",
+  "finance",
+  "movies",
+  "stocks",
+  "vehicles",
+  "cafes",
+];
 const getCatColor = (c) => CATEGORY_COLOR[c?.toLowerCase()] || "#6b7280";
 const getBadge = (s) => SOURCE_BADGE[s] || SOURCE_BADGE.query;
 
@@ -547,6 +566,16 @@ export default function App() {
   const [breakdown, setBreakdown] = useState(null);
   const [bentoPosts, setBentoPosts] = useState([]);
   const [bentoLoaded, setBentoLoaded] = useState(false);
+  const [selectedInitialCats, setSelectedInitialCats] = useState([]);
+  const [showCatSelector, setShowCatSelector] = useState(() => {
+    // Initialize based on sessionStorage - show selector if first search not done
+    try {
+      const firstSearchDone = sessionStorage.getItem("first_search_done");
+      return firstSearchDone !== "true";
+    } catch {
+      return true;
+    }
+  });
   const [showBento, setShowBento] = useState(true);
   const [likeEvents, setLikeEvents] = useState([]);
   const leRef = useRef([]);
@@ -619,7 +648,98 @@ export default function App() {
 
 // handlers 
 
+  function applyInitialCategoriesIfNeeded(posts) {
+    try {
+      const chosenRaw = localStorage.getItem("initial_categories_selected");
+      const applied = localStorage.getItem("initial_categories_applied");
+      if (!chosenRaw) return posts;
+      if (applied === "true") return posts;
+      const chosen = JSON.parse(chosenRaw || "[]").map((s) => s.toLowerCase());
+      if (!chosen.length) {
+        localStorage.setItem("initial_categories_applied", "true");
+        return posts;
+      }
+      const matched = [];
+      const seen = new Set();
+      for (const p of posts) {
+        if (chosen.includes((p.category || "").toLowerCase()) && !seen.has(p.post_id)) {
+          matched.push(p);
+          seen.add(p.post_id);
+        }
+      }
+      const rest = posts.filter((p) => !seen.has(p.post_id));
+      const reordered = [...matched.slice(0, 12), ...rest];
+      localStorage.setItem("initial_categories_applied", "true");
+      return reordered;
+    } catch (err) {
+      return posts;
+    }
+  }
+
+  function handleApplyInitialCats() {
+    try {
+      localStorage.setItem("initial_categories_selected", JSON.stringify(selectedInitialCats));
+      setShowCatSelector(false);
+      setShowBento(false);
+      // Trigger the first search with initial categories using a default query
+      const catStr = selectedInitialCats.join(",");
+      console.log(`[category apply] triggering initial search with categories: ${catStr}`);
+      handleSearch(`initial:${catStr}`);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  function handleSkipInitialCats() {
+    try {
+      localStorage.setItem("initial_categories_selected", JSON.stringify([]));
+      sessionStorage.setItem("first_search_done", "true"); // Skip means no special category rules
+    } catch (err) {}
+    setShowCatSelector(false);
+  }
+
+  function resetCategorySelection() {
+    try {
+      localStorage.removeItem("initial_categories_selected");
+      sessionStorage.removeItem("first_search_done");
+      console.log("[reset] cleared category selection");
+    } catch (err) {}
+    setShowCatSelector(true);
+    setSelectedInitialCats([]);
+    setResults([]);
+    setBreakdown(null);
+  }
+
   useEffect(() => {
+    // Initialize selector - show if first search not done yet in THIS session
+    try {
+      const firstSearchDone = sessionStorage.getItem("first_search_done");
+      const chosenRaw = localStorage.getItem("initial_categories_selected");
+      
+      console.log("[init] first_search_done=", firstSearchDone, "chosen=", chosenRaw);
+      
+      // Show selector only if first search hasn't been completed in this session
+      if (firstSearchDone === "true") {
+        setShowCatSelector(false);
+        console.log("[init] hiding category selector (first search already done in this session)");
+        // Load previously selected categories
+        if (chosenRaw) {
+          try {
+            const parsed = JSON.parse(chosenRaw);
+            setSelectedInitialCats(parsed.map((s) => (s || "").toLowerCase()));
+          } catch (_) {}
+        }
+      } else {
+        // First search not done yet in this session - show selector
+        setShowCatSelector(true);
+        console.log("[init] showing category selector");
+      }
+    } catch (err) {
+      console.error("[init] error:", err);
+      // On error, default to showing selector
+      setShowCatSelector(true);
+    }
+
     fetch(`${API_BASE}/random?count=12`)
       .then((r) => r.json())
       .then((d) => {
@@ -629,6 +749,7 @@ export default function App() {
         }
       })
       .catch(() => {});
+
     fetch(`${API_BASE}/likes/${USER_ID}`)
       .then((r) => r.json())
       .then((d) => {
@@ -684,35 +805,75 @@ export default function App() {
       return;
     }
     const currentEvents = leRef.current;
-    console.log(`[search] "${q}" | ${currentEvents.length} events`);
+    
+    // Check if this is the first search with selected categories
+    const selectedCats = localStorage.getItem("initial_categories_selected");
+    const firstSearchDone = sessionStorage.getItem("first_search_done");
+    const hasSelectedCats = selectedCats && JSON.parse(selectedCats).length > 0;
+    const isFirstSearchWithCats = hasSelectedCats && firstSearchDone !== "true";
+    
+    // For initial category search, use empty query internally
+    const actualQuery = q.startsWith("initial:") ? "" : q;
+    
+    console.log(`[search] "${q}" | ${currentEvents.length} events | first_search=${isFirstSearchWithCats}`);
+    
     setLoading(true);
     setError("");
     setShowBento(false);
     setResults([]);
     setBreakdown(null);
+    
     try {
+      console.log("[search] sending request to", `${API_BASE}/search`);
+      
+      const requestBody = {
+        query: actualQuery,
+        user_id: USER_ID,
+        session_like_events: currentEvents,
+      };
+      
+      // Add special parameter for first search with selected categories
+      if (isFirstSearchWithCats) {
+        requestBody.initial_categories = JSON.parse(selectedCats);
+      }
+      
       const res = await fetch(`${API_BASE}/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: q,
-          user_id: USER_ID,
-          session_like_events: currentEvents,
-        }),
+        body: JSON.stringify(requestBody),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      
+      console.log("[search] response status:", res.status);
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error("[search] error response:", errText);
+        throw new Error(`HTTP ${res.status}: ${errText}`);
+      }
+      
       const data = await res.json();
-      console.log(`[search] breakdown:`, data.breakdown);
+      console.log(`[search] success, got ${data.results?.length || 0} results`, data.breakdown);
+      
       const seen = new Set();
       const deduped = (data.results || []).filter((p) => {
         if (seen.has(p.post_id)) return false;
         seen.add(p.post_id);
         return true;
       });
+      
       setResults(deduped);
       setBreakdown(data.breakdown || null);
+      
+      // Mark first search as done after successful search with selected categories
+      if (isFirstSearchWithCats) {
+        sessionStorage.setItem("first_search_done", "true");
+        console.log("[search] marked first_search_done");
+      }
+      
+      if (deduped.length === 0) {
+        setError("No results found for your search");
+      }
     } catch (err) {
-      console.error("[search]", err);
+      console.error("[search] error:", err);
       setError(`Search failed: ${err.message}`);
     } finally {
       setLoading(false);
@@ -800,6 +961,15 @@ export default function App() {
         )}
 
         {/* search section  */}
+        {showCatSelector && (
+          <CategorySelector
+            available={INITIAL_CATEGORIES}
+            selected={selectedInitialCats}
+            setSelected={setSelectedInitialCats}
+            onApply={handleApplyInitialCats}
+            onSkip={handleSkipInitialCats}
+          />
+        )}
         <div style={{ display: "flex", gap: "8px", marginBottom: "24px" }}>
           <input
             ref={searchInputRef}
@@ -1193,6 +1363,66 @@ export default function App() {
           
           <RAGResponse data={ragData} loading={ragLoading} />
         </div> */}
+      </div>
+    </div>
+  );
+}
+
+function CategorySelector({ available = [], selected = [], setSelected, onApply, onSkip, max = 3 }) {
+  const toggle = (c) => {
+    const lc = c.toLowerCase();
+    const cur = selected.slice();
+    const idx = cur.indexOf(lc);
+    if (idx >= 0) cur.splice(idx, 1);
+    else {
+      if (cur.length >= max) return; // limit
+      cur.push(lc);
+    }
+    setSelected(cur);
+  };
+
+  return (
+    <div style={{ marginBottom: "16px", padding: "12px", background: "#050505", border: "1px solid #1a1a1a", borderRadius: "8px" }}>
+      <div style={{ marginBottom: "8px", fontSize: "13px", color: "#ccc" }}>
+        Choose up to {max} categories to feature in the initial spotlight (applies once):
+      </div>
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
+        {available.map((c) => {
+          const lc = c.toLowerCase();
+          const active = selected.includes(lc);
+          return (
+            <button
+              key={c}
+              onClick={() => toggle(c)}
+              style={{
+                padding: "6px 10px",
+                background: active ? "#111" : "#0a0a0a",
+                border: active ? "1px solid #4ade80" : "1px solid #1a1a1a",
+                color: active ? "#fff" : "#bbb",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "12px",
+              }}
+            >
+              {c}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: "8px" }}>
+        <button
+          onClick={() => onApply()}
+          disabled={selected.length === 0}
+          style={{ padding: "8px 12px", background: selected.length ? "#fff" : "#333", color: selected.length ? "#000" : "#777", border: "none", borderRadius: "8px", cursor: selected.length ? "pointer" : "not-allowed", fontWeight: 600 }}
+        >
+          Apply
+        </button>
+        <button
+          onClick={() => onSkip()}
+          style={{ padding: "8px 12px", background: "#111", color: "#bbb", border: "1px solid #1a1a1a", borderRadius: "8px", cursor: "pointer" }}
+        >
+          Skip
+        </button>
       </div>
     </div>
   );
