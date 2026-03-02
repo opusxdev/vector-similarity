@@ -45,14 +45,11 @@ const qdrantClient = new QdrantClient({
 const COLLECTION_NAME = "social_posts";
 const LIKES_COLLECTION = "user_likes";
 
-// ── In-process embedding via @xenova/transformers ────────────────────────────
-// Runs all-MiniLM-L6-v2 directly inside this Node.js process.
-// No Python sidecar, no HTTP calls, no ECONNREFUSED / ENOTFOUND errors.
+
 let _embedder = null;
 const _embedderReady = (async () => {
   try {
     const { pipeline, env } = await import("@xenova/transformers");
-    // Use model pre-cached at Docker build time; never hit the network at runtime
     env.cacheDir = process.env.XENOVA_CACHE_DIR || "/app/.cache/xenova";
     env.localFilesOnly = true;
     console.log("Loading embedding model (Xenova/all-MiniLM-L6-v2)...");
@@ -69,7 +66,7 @@ async function getEmbedding(text) {
   const output = await _embedder(text, { pooling: "mean", normalize: true });
   return Array.from(output.data);
 }
-// ─────────────────────────────────────────────────────────────────────────────
+
 
 // Qdrant: ensure user_likes collection exists
 (async () => {
@@ -721,7 +718,7 @@ app.post("/posts", async (req, res) => {
         .json({ detail: "post_id must be in format 'post_001'" });
     if (await Post.getPost(post_id))
       return res.status(400).json({ detail: "Post already exists" });
-    await Post.createPost({ post_id, name, caption, media_url, media_type });
+    await Post.createPost({ post_id, name, caption, media_url, media_type, category });
     const embedding = await getEmbedding(`${name}: ${caption}`);
     const postIdNum = parseInt(post_id.replace("post_", ""));
     await qdrantClient.upsert(COLLECTION_NAME, {
