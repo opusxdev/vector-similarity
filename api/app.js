@@ -722,7 +722,7 @@ app.get("/random", async (req, res) => {
         caption: p.payload.caption,
         media_url: p.payload.media_url || "",
         media_type: p.payload.media_type || "image",
-        category: p.payload.category || "unknown",
+        category: p.payload.category || CATEGORY_MAPPING[p.payload.post_id] || "unknown",
       })),
     });
   } catch (e) {
@@ -736,6 +736,10 @@ app.get("/posts", async (req, res) => {
     posts.forEach((p) => {
       p._id = p._id.toString();
       p.created_at = p.created_at.toISOString();
+      // Ensure category is always present from master mapping
+      if (!p.category || p.category === "unknown") {
+        p.category = CATEGORY_MAPPING[p.post_id] || "unknown";
+      }
     });
     res.json({ total: posts.length, posts });
   } catch (e) {
@@ -978,6 +982,7 @@ app.post("/search", async (req, res) => {
       query_based: feed.filter((r) => r.source === "query").length,
       interest_based: feed.filter((r) => r.source === "interest").length,
       random: feed.filter((r) => r.source === "random").length,
+      initial_category_based: feed.filter((r) => r.source === "initial_category").length,
       budget,
       ranked_interests: rankedInterests,
     };

@@ -689,21 +689,33 @@ export default function App() {
         const allPosts = data.posts || [];
         let catPosts = [];
         selectedCats.forEach(cat => {
+          const normCat = cat.toLowerCase().trim();
           const filtered = allPosts
-            .filter((p) => (p.category || '').toLowerCase() === cat.toLowerCase())
+            .filter((p) => {
+              const pCat = (p.category || '').toLowerCase().trim();
+              return pCat === normCat;
+            })
             .map((p) => ({ ...p, source: 'query' }));
           
           const shuffled = [...filtered].sort(() => Math.random() - 0.5);
-          catPosts = catPosts.concat(shuffled.slice(0, 2));
+          catPosts = catPosts.concat(shuffled.slice(0, 3)); // 3 per cat to be safe
         });
 
         const otherPosts = allPosts
-          .filter((p) => !selectedCats.includes((p.category || '').toLowerCase()))
+          .filter((p) => {
+            const pCat = (p.category || '').toLowerCase().trim();
+            return !selectedCats.map(c => c.toLowerCase().trim()).includes(pCat);
+          })
           .map((p) => ({ ...p, source: 'random' }))
           .sort(() => Math.random() - 0.5);
 
-        const randomFour = otherPosts.slice(0, 4);
-        let postsToShow = [...catPosts, ...randomFour];
+        const randomPad = otherPosts.slice(0, 4);
+        let postsToShow = [...catPosts, ...randomPad];
+        
+        // Final fallback: if zero posts, just grab random ones
+        if (postsToShow.length === 0) {
+            postsToShow = allPosts.slice(0, 10).map(p => ({...p, source: 'random'}));
+        }
 
         postsToShow.sort(() => Math.random() - 0.5);
         setResults(postsToShow);

@@ -20,7 +20,7 @@ RUN npm install --production
 
 # ── CACHE BUSTER ──────────
 # Bump this to force rebuild of the layers below
-ARG CACHEBUST=2026-03-02.6
+ARG CACHEBUST=2026-03-02.7
 RUN echo "Cache bust: $CACHEBUST"
 # ──────────────────────────
 
