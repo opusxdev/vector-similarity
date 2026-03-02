@@ -45,6 +45,60 @@ const qdrantClient = new QdrantClient({
 const COLLECTION_NAME = "social_posts";
 const LIKES_COLLECTION = "user_likes";
 
+const CATEGORY_MAPPING = {
+  'post_001': 'nature', 'post_002': 'tech', 'post_003': 'healthcare', 'post_004': 'food', 'post_005': 'tech',
+  'post_006': 'art', 'post_007': 'nature', 'post_008': 'education', 'post_009': 'tech', 'post_010': 'travel',
+  'post_011': 'healthcare', 'post_012': 'art', 'post_013': 'travel', 'post_014': 'food', 'post_015': 'music',
+  'post_016': 'tech', 'post_017': 'tech', 'post_018': 'tech', 'post_019': 'tech', 'post_020': 'tech',
+  'post_021': 'tech', 'post_022': 'tech', 'post_023': 'tech', 'post_024': 'tech', 'post_025': 'tech',
+  'post_026': 'food', 'post_027': 'food', 'post_028': 'food', 'post_029': 'food', 'post_030': 'food',
+  'post_031': 'food', 'post_032': 'food', 'post_033': 'food', 'post_034': 'food', 'post_035': 'food',
+  'post_036': 'travel', 'post_037': 'travel', 'post_038': 'travel', 'post_039': 'travel', 'post_040': 'travel',
+  'post_041': 'travel', 'post_042': 'travel', 'post_043': 'travel', 'post_044': 'travel', 'post_045': 'travel',
+  'post_046': 'sports', 'post_047': 'sports', 'post_048': 'sports', 'post_049': 'sports', 'post_050': 'sports',
+  'post_051': 'sports', 'post_052': 'healthcare', 'post_053': 'sports', 'post_054': 'sports', 'post_055': 'sports',
+  'post_056': 'art', 'post_057': 'art', 'post_058': 'art', 'post_059': 'art', 'post_060': 'art',
+  'post_061': 'art', 'post_062': 'art', 'post_063': 'art', 'post_064': 'art', 'post_065': 'art',
+  'post_066': 'tech', 'post_067': 'tech', 'post_068': 'tech', 'post_069': 'tech', 'post_070': 'tech',
+  'post_071': 'tech', 'post_072': 'tech', 'post_073': 'tech', 'post_074': 'tech', 'post_075': 'tech',
+  'post_076': 'ai', 'post_077': 'ai', 'post_078': 'ai', 'post_079': 'ai', 'post_080': 'ai',
+  'post_081': 'ai', 'post_082': 'ai', 'post_083': 'ai', 'post_084': 'ai', 'post_085': 'ai',
+  'post_086': 'healthcare', 'post_087': 'healthcare', 'post_088': 'healthcare', 'post_089': 'healthcare', 'post_090': 'healthcare',
+  'post_091': 'healthcare', 'post_092': 'healthcare', 'post_093': 'healthcare', 'post_094': 'healthcare', 'post_095': 'healthcare',
+  'post_096': 'web3', 'post_097': 'web3', 'post_098': 'web3', 'post_099': 'web3', 'post_100': 'web3',
+  'post_101': 'web3', 'post_102': 'web3', 'post_103': 'web3', 'post_104': 'web3', 'post_105': 'web3',
+  'post_106': 'socialmedia', 'post_107': 'socialmedia', 'post_108': 'socialmedia', 'post_109': 'socialmedia', 'post_110': 'socialmedia',
+  'post_111': 'socialmedia', 'post_112': 'socialmedia', 'post_113': 'socialmedia', 'post_114': 'socialmedia', 'post_115': 'socialmedia',
+  'post_116': 'food', 'post_117': 'food', 'post_118': 'food', 'post_119': 'food', 'post_120': 'food',
+  'post_121': 'food', 'post_122': 'food', 'post_123': 'food', 'post_124': 'food', 'post_125': 'food',
+  'post_126': 'sports', 'post_127': 'sports', 'post_128': 'sports', 'post_129': 'sports', 'post_130': 'sports',
+  'post_131': 'sports', 'post_132': 'sports', 'post_133': 'sports', 'post_134': 'sports', 'post_135': 'sports',
+  'post_136': 'finance', 'post_137': 'finance', 'post_138': 'finance', 'post_139': 'finance', 'post_140': 'finance',
+  'post_141': 'finance', 'post_142': 'finance', 'post_143': 'finance', 'post_144': 'finance', 'post_145': 'finance',
+  'post_146': 'movies', 'post_147': 'movies', 'post_148': 'movies', 'post_149': 'movies', 'post_150': 'movies',
+  'post_151': 'movies', 'post_152': 'movies', 'post_153': 'movies', 'post_154': 'movies', 'post_155': 'movies',
+  'post_156': 'music', 'post_157': 'music', 'post_158': 'music', 'post_159': 'music', 'post_160': 'music',
+  'post_161': 'music', 'post_162': 'music', 'post_163': 'music', 'post_164': 'music', 'post_165': 'music',
+  'post_166': 'education', 'post_167': 'education', 'post_168': 'education', 'post_169': 'education', 'post_170': 'education',
+  'post_171': 'education', 'post_172': 'education', 'post_173': 'education', 'post_174': 'education', 'post_175': 'education',
+  'post_176': 'nature', 'post_177': 'nature', 'post_178': 'nature', 'post_179': 'nature', 'post_180': 'nature',
+  'post_181': 'nature', 'post_182': 'nature', 'post_183': 'nature', 'post_184': 'nature', 'post_185': 'nature',
+  'post_186': 'stocks', 'post_187': 'stocks', 'post_188': 'stocks', 'post_189': 'stocks', 'post_190': 'stocks',
+  'post_191': 'stocks', 'post_192': 'stocks', 'post_193': 'stocks', 'post_194': 'stocks', 'post_195': 'stocks',
+  'post_196': 'vehicles', 'post_197': 'vehicles', 'post_198': 'vehicles', 'post_199': 'vehicles', 'post_200': 'vehicles',
+  'post_201': 'vehicles', 'post_202': 'vehicles', 'post_203': 'vehicles', 'post_204': 'vehicles', 'post_205': 'vehicles',
+  'post_206': 'cafes', 'post_207': 'cafes', 'post_208': 'cafes', 'post_209': 'cafes', 'post_210': 'cafes',
+  'post_211': 'cafes', 'post_212': 'cafes', 'post_213': 'cafes', 'post_214': 'cafes', 'post_215': 'cafes'
+};
+
+// Auto-sync missing categories on start
+(async () => {
+  try {
+    await Post.syncMissingCategories(CATEGORY_MAPPING);
+  } catch (e) {
+    console.error("Failed to sync categories:", e.message);
+  }
+})();
 
 let _embedder = null;
 const _embedderReady = (async () => {
