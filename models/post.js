@@ -20,13 +20,13 @@ async function initMongoDB() {
         client = new MongoClient(MONGODB_URI);
         await client.connect();
         console.log('✓ Connected to MongoDB');
-        
+
         db = client.db(DB_NAME);
         collection = db.collection(COLLECTION_NAME);
-        
+
         // Create index on post_id
         await collection.createIndex({ post_id: 1 }, { unique: true });
-        
+
         return collection;
     } catch (error) {
         console.error('MongoDB connection error:', error);
@@ -55,15 +55,16 @@ class Post {
         return post;
     }
 
-    static async createPost({ post_id, name, caption, media_url, media_type = 'image' }) {
+    static async createPost({ post_id, name, caption, media_url, media_type = 'image', category = 'unknown' }) {
         const coll = await this.getCollection();
-        
+
         const postDoc = {
             post_id,
             name,
             caption,
             media_url,
             media_type,
+            category,
             created_at: new Date(),
             updated_at: new Date()
         };
@@ -74,10 +75,10 @@ class Post {
 
     static async updatePost(postId, updateData) {
         const coll = await this.getCollection();
-        
+
         const result = await coll.updateOne(
             { post_id: postId },
-            { 
+            {
                 $set: {
                     ...updateData,
                     updated_at: new Date()
