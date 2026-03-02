@@ -29,7 +29,7 @@ app.use((req, res, next) => {
 });
 app.use("/assets", express.static(path.join(FRONTEND_DIST, "assets")));
 
-const REQUIRED_ENV = ["QDRANT_URL", "QDRANT_API_KEY", "GROQ_API_KEY"];
+const REQUIRED_ENV = ["QDRANT_URL", "QDRANT_API_KEY", "GROQ_API_KEY", "MONGODB_URI"];
 const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
 if (missingEnv.length > 0) {
   console.error("\nMissing env vars:", missingEnv.join(", "));
