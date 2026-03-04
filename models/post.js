@@ -114,6 +114,23 @@ class Post {
         const coll = await this.getCollection();
         return await coll.countDocuments();
     }
+
+    static async syncMissingCategories(mapping) {
+        const coll = await this.getCollection();
+        console.log('Syncing categories in MongoDB...');
+        for (const [postId, category] of Object.entries(mapping)) {
+            await coll.updateOne(
+                { post_id: postId, category: { $exists: false } },
+                { $set: { category: category } }
+            );
+            // Also update "unknown" categories
+            await coll.updateOne(
+                { post_id: postId, category: "unknown" },
+                { $set: { category: category } }
+            );
+        }
+        console.log('✓ Category sync complete');
+    }
 }
 
 // Graceful shutdown

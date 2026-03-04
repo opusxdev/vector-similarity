@@ -146,14 +146,17 @@ const SOURCE_BADGE = {
   random: { bg: "#4c1d95", color: "#a78bfa", text: "Discover" },
 };
 const RANK_COLOR = {
-  primary: "#f59e0b",
-  secondary: "#60a5fa",
+  primary: "#f59e0b",      // PRIMARY tier (>= 6 likes)
+  secondary: "#60a5fa",    // SECONDARY tier (>= 4 likes)
   tertiary: "#a78bfa",
   quaternary: "#34d399",
   quinary: "#f472b6",
   senary: "#38bdf8",
   septenary: "#fb923c",
   octonary: "#4ade80",
+  PRIMARY: "#f59e0b",      // Tier-based constants
+  SECONDARY: "#60a5fa",
+  TERTIARY: "#a78bfa",
 };
 const CATEGORY_COLOR = {
   tech: "#3b82f6",
@@ -371,15 +374,23 @@ function InterestPills({ rankedInterests }) {
       {rankedInterests.map((r) => {
         const rc = RANK_COLOR[r.rank] || "#6b7280",
           cc = getCatColor(r.category);
+        
+        // Color code by tier
+        const tierColor = r.tier === "PRIMARY" 
+          ? "#f59e0b" // Amber for PRIMARY 
+          : r.tier === "SECONDARY" 
+          ? "#60a5fa" // Blue for SECONDARY
+          : rc; // Default color for others
+
         return (
           <div
-            key={r.rank}
+            key={`${r.category}-${r.tier || r.rank}`}
             style={{
               display: "flex",
               alignItems: "center",
               gap: "4px",
-              background: rc + "12",
-              border: `1px solid ${rc}33`,
+              background: tierColor + "12",
+              border: `1px solid ${tierColor}33`,
               borderRadius: "20px",
               padding: "3px 9px",
             }}
@@ -387,13 +398,13 @@ function InterestPills({ rankedInterests }) {
             <span
               style={{
                 fontSize: "8px",
-                color: rc,
+                color: tierColor,
                 fontWeight: 800,
                 textTransform: "uppercase",
                 letterSpacing: "0.4px",
               }}
             >
-              {r.rank}
+              {r.tier || r.rank}
             </span>
             <span style={{ fontSize: "9px", color: cc, fontWeight: 700 }}>
               {r.category}
@@ -720,10 +731,10 @@ export default function App() {
         postsToShow.sort(() => Math.random() - 0.5);
         setResults(postsToShow);
         setBreakdown({
-          budget: { query: catPosts.length, interest: 0, random: randomFour.length },
+          budget: { query: catPosts.length, interest: 0, random: randomPad.length },
           query_based: catPosts.length,
           interest_based: 0,
-          random: randomFour.length,
+          random: randomPad.length,
           total: postsToShow.length,
           ranked_interests: [],
         });
@@ -940,8 +951,18 @@ export default function App() {
       qb = breakdown.query_based || 0,
       rb = breakdown.random || 0,
       ri = breakdown.ranked_interests || [];
+    
+    // Extract PRIMARY and SECONDARY interests for display
+    const primaryInterests = ri.filter(r => r.tier === "PRIMARY").map(r => r.category).join(", ");
+    const secondaryInterests = ri.filter(r => r.tier === "SECONDARY").map(r => r.category).join(", ");
+    const tierDisplay = primaryInterests 
+      ? `PRIMARY: ${primaryInterests}${secondaryInterests ? ` | SECONDARY: ${secondaryInterests}` : ""}`
+      : secondaryInterests
+      ? `SECONDARY: ${secondaryInterests}`
+      : `primary: ${ri[0]?.category || ""}`;
+    
     if (ib > 0) {
-      modeLabel = `✦ Personalized  ·  ${ib} interest  ·  ${qb} query  ·  ${rb} random  ·  primary: ${ri[0]?.category || ""}`;
+      modeLabel = `✦ Personalized  ·  ${ib} interest  ·  ${qb} query  ·  ${rb} random  ·  ${tierDisplay}`;
       modeColor = "#60a5fa";
     } else {
       modeLabel = `✦ Discovery  ·  ${qb} query  ·  ${rb} random`;
