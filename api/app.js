@@ -187,9 +187,9 @@ const RANK_LABELS = [
 
 // INTEREST TIER THRESHOLDS
 const INTEREST_TIER_CRITERIA = {
-  PRIMARY: 6,      // >= 6 likes = PRIMARY
-  SECONDARY: 4,    // >= 4 likes = SECONDARY
-  TERTIARY: 1,     // >= 1 like = TERTIARY (implicit, everything else)
+  PRIMARY: 15,      
+  SECONDARY: 10,   
+  TERTIARY: 1,     
 };
 
 const DECAY_LAMBDA = 0.05;
@@ -202,24 +202,14 @@ function likeWeight(timestamp, posInBucket, bucketSize) {
   return recency * position;
 }
 
-/**
- * ULTRA-PRECISE INTEREST TIER CATEGORIZATION
- * ============================================
- * Based on LIKE COUNT thresholds:
- * - PRIMARY INTEREST: count >= 6 likes
- * - SECONDARY INTEREST: count >= 4 AND < 6 likes
- * - TERTIARY & BEYOND: count < 4 likes (ordered by score/recency)
- * 
- * When new categories cross thresholds, higher-tier categories demote gracefully.
- * This preserves ranking order within tiers and ensures stability.
- */
+
 function categorizeInterestTiers(rankedInterests) {
   if (!rankedInterests || rankedInterests.length === 0) return [];
 
-  // Partition interests into tier buckets
-  const primaryBucket = [];  // count >= 6
-  const secondaryBucket = []; // count >= 4 && count < 6
-  const tertiaryBucket = []; // count < 4
+
+  const primaryBucket = [];  
+  const secondaryBucket = []; 
+  const tertiaryBucket = []; 
 
   rankedInterests.forEach((interest, originalIdx) => {
     const tierData = {
@@ -700,7 +690,7 @@ app.post("/rag", async (req, res) => {
       });
     });
 
-    // Step 4: Generate structured answer using LLM with system prompt
+
     let analysisResult;
     try {
       analysisResult = await generateStructuredRAGAnswer(question, contextBlocks, sourceData);

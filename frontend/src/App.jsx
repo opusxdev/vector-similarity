@@ -146,8 +146,8 @@ const SOURCE_BADGE = {
   random: { bg: "#4c1d95", color: "#a78bfa", text: "Discover" },
 };
 const RANK_COLOR = {
-  primary: "#f59e0b",      // PRIMARY tier (>= 6 likes)
-  secondary: "#60a5fa",    // SECONDARY tier (>= 4 likes)
+  primary: "#f59e0b",      // PRIMARY tier (>= 15 likes)
+  secondary: "#60a5fa",    // SECONDARY tier (>= 10 likes)
   tertiary: "#a78bfa",
   quaternary: "#34d399",
   quinary: "#f472b6",
