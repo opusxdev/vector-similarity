@@ -5,10 +5,16 @@ require('dotenv').config();
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB_NAME = 'social_media_db';
 const COLLECTION_NAME = 'posts';
+const COMMENTS_COLLECTION = 'comments';
+const SAVES_COLLECTION = 'saved_posts';
+const SHARES_COLLECTION = 'shares';
 
 let client = null;
 let db = null;
 let collection = null;
+let commentsCollection = null;
+let savesCollection = null;
+let sharesCollection = null;
 
 // Initialize MongoDB connection
 async function initMongoDB() {
@@ -23,9 +29,20 @@ async function initMongoDB() {
 
         db = client.db(DB_NAME);
         collection = db.collection(COLLECTION_NAME);
+        commentsCollection = db.collection(COMMENTS_COLLECTION);
+        savesCollection = db.collection(SAVES_COLLECTION);
+        sharesCollection = db.collection(SHARES_COLLECTION);
 
-        // Create index on post_id
+        // Create indexes on post_id
         await collection.createIndex({ post_id: 1 }, { unique: true });
+        await commentsCollection.createIndex({ post_id: 1 });
+        await commentsCollection.createIndex({ user_id: 1 });
+        await commentsCollection.createIndex({ created_at: -1 });
+        await savesCollection.createIndex({ post_id: 1 });
+        await savesCollection.createIndex({ user_id: 1 });
+        await savesCollection.createIndex({ user_id: 1, post_id: 1 }, { unique: true });
+        await sharesCollection.createIndex({ post_id: 1 });
+        await sharesCollection.createIndex({ shared_by: 1 });
 
         return collection;
     } catch (error) {
@@ -130,6 +147,125 @@ class Post {
             );
         }
         console.log('✓ Category sync complete');
+    }
+
+    // ===== COMMENTS METHODS =====
+    static async addComment(postId, userId, commentText) {
+        await this.getCollection(); // Ensure DB is initialized
+        const comment = {
+            _id: new ObjectId(),
+            post_id: postId,
+            user_id: userId,
+            text: commentText,
+            created_at: new Date(),
+            likes: 0
+        };
+        await commentsCollection.insertOne(comment);
+        return comment;
+    }
+
+    static async getComments(postId) {
+        await this.getCollection();
+        return await commentsCollection.find({ post_id: postId })
+            .sort({ created_at: -1 })
+            .toArray();
+    }
+
+    static async deleteComment(commentId) {
+        await this.getCollection();
+        const result = await commentsCollection.deleteOne({ _id: new ObjectId(commentId) });
+        return result.deletedCount > 0;
+    }
+
+    static async getCommentCount(postId) {
+        await this.getCollection();
+        return await commentsCollection.countDocuments({ post_id: postId });
+    }
+
+    // ===== SAVES METHODS =====
+    static async savePost(postId, userId) {
+        await this.getCollection();
+        const savedPost = {
+            _id: new ObjectId(),
+            post_id: postId,
+            user_id: userId,
+            saved_at: new Date()
+        };
+        await savesCollection.insertOne(savedPost);
+        return savedPost;
+    }
+
+    static async removeSavedPost(postId, userId) {
+        await this.getCollection();
+        const result = await savesCollection.deleteOne({
+            post_id: postId,
+            user_id: userId
+        });
+        return result.deletedCount > 0;
+    }
+
+    static async getSavedPosts(userId) {
+        await this.getCollection();
+        const saved = await savesCollection.find({ user_id: userId })
+            .sort({ saved_at: -1 })
+            .toArray();
+        
+        // Fetch full post details
+        const posts = [];
+        for (const savedItem of saved) {
+            const post = await this.getPost(savedItem.post_id);
+            if (post) {
+                posts.push({ ...post, saved_at: savedItem.saved_at });
+            }
+        }
+        return posts;
+    }
+
+    static async isPostSaved(postId, userId) {
+        await this.getCollection();
+        const saved = await savesCollection.findOne({
+            post_id: postId,
+            user_id: userId
+        });
+        return !!saved;
+    }
+
+    static async getSaveCount(postId) {
+        await this.getCollection();
+        return await savesCollection.countDocuments({ post_id: postId });
+    }
+
+    // ===== SHARES METHODS =====
+    static async sharePost(postId, sharedBy, platform = 'direct') {
+        await this.getCollection();
+        const share = {
+            _id: new ObjectId(),
+            post_id: postId,
+            shared_by: sharedBy,
+            platform: platform,
+            shared_at: new Date()
+        };
+        await sharesCollection.insertOne(share);
+        return share;
+    }
+
+    static async getShares(postId) {
+        await this.getCollection();
+        return await sharesCollection.find({ post_id: postId })
+            .sort({ shared_at: -1 })
+            .toArray();
+    }
+
+    static async getShareCount(postId) {
+        await this.getCollection();
+        return await sharesCollection.countDocuments({ post_id: postId });
+    }
+
+    static async getUserShares(userId) {
+        await this.getCollection();
+        return await sharesCollection.find({ shared_by: userId })
+            .sort({ shared_at: -1 })
+            .toArray();
     }
 }
 

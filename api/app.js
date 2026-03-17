@@ -44,6 +44,28 @@ const qdrantClient = new QdrantClient({
 
 const COLLECTION_NAME = "social_posts";
 const LIKES_COLLECTION = "user_likes";
+const EVENTS_COLLECTION = "user_events";
+const COMMENTS_COLLECTION = "post_comments";
+const SAVES_COLLECTION = "user_saved_posts";
+const SHARES_COLLECTION = "post_shares";
+
+// Event weights for engagement scoring algorithm
+const EVENT_WEIGHTS = {
+  like: 0.2,
+  comment: 0.3,
+  share: 0.4,
+  save: 0.5,
+  watch_time: 0.6,
+};
+
+// Event types
+const EVENT_TYPES = {
+  LIKE: "like",
+  COMMENT: "comment",
+  SHARE: "share",
+  SAVE: "save",
+  WATCH_TIME: "watch_time",
+};
 
 const CATEGORY_MAPPING = {
   'post_001': 'nature', 'post_002': 'tech', 'post_003': 'healthcare', 'post_004': 'food', 'post_005': 'tech',
@@ -134,6 +156,18 @@ async function getEmbedding(text) {
   }
 })();
 
+// Qdrant: ensure user_events collection exists (for all event types)
+(async () => {
+  try {
+    await qdrantClient.createCollection(EVENTS_COLLECTION, {
+      vectors: { size: 384, distance: "Cosine" },
+    });
+    console.log(`Created ${EVENTS_COLLECTION}`);
+  } catch {
+    console.log(`  ${EVENTS_COLLECTION} exists`);
+  }
+})();
+
 async function generateLLMAnswer(prompt) {
   const r = await axios.post(
     "https://api.groq.com/openai/v1/chat/completions",
@@ -187,8 +221,8 @@ const RANK_LABELS = [
 
 // INTEREST TIER THRESHOLDS
 const INTEREST_TIER_CRITERIA = {
-  PRIMARY: 15,      
-  SECONDARY: 10,   
+  PRIMARY: 6,      
+  SECONDARY: 3,   
   TERTIARY: 1,     
 };
 
@@ -200,6 +234,11 @@ function likeWeight(timestamp, posInBucket, bucketSize) {
   const recency = Math.exp(-DECAY_LAMBDA * ageHours);
   const position = 1 - (posInBucket / Math.max(bucketSize, 1)) * 0.5;
   return recency * position;
+}
+
+// Calculate event weight based on event type
+function getEventWeight(eventType) {
+  return EVENT_WEIGHTS[eventType] || EVENT_WEIGHTS.like;
 }
 
 
@@ -256,12 +295,12 @@ function categorizeInterestTiers(rankedInterests) {
   return tieredInterests;
 }
 
-// Build ranked interest buckets from session_like_events
-function computeInterestRanking(likeEvents) {
-  if (!likeEvents || likeEvents.length === 0) return [];
+// Build ranked interest buckets from session events with weighted scoring
+function computeInterestRanking(sessionEvents) {
+  if (!sessionEvents || sessionEvents.length === 0) return [];
 
   const buckets = {};
-  likeEvents.forEach((ev, idx) => {
+  sessionEvents.forEach((ev, idx) => {
     let key = (ev.category || "").toLowerCase().trim();
     if (!key || key === "unknown") key = `_anon_${ev.post_id}`;
     if (!buckets[key]) buckets[key] = { category: key, events: [] };
@@ -273,7 +312,12 @@ function computeInterestRanking(likeEvents) {
     const n = bucket.events.length;
     let totalScore = 0;
     bucket.events.forEach((ev, posInBucket) => {
-      totalScore += likeWeight(ev.timestamp, posInBucket, n);
+      // Get base weight from recency and position
+      const baseWeight = likeWeight(ev.timestamp, posInBucket, n);
+      // Apply event type multiplier (default to like if not specified)
+      const eventTypeWeight = getEventWeight(ev.event_type || EVENT_TYPES.LIKE);
+      // Total weight considers both recency/position AND event importance
+      totalScore += baseWeight * eventTypeWeight;
     });
     return {
       category: bucket.category,
@@ -281,6 +325,7 @@ function computeInterestRanking(likeEvents) {
       post_ids: bucket.events.map((e) => e.post_id),
       count: n,
       score: Math.round(totalScore * 1000) / 1000,
+      weighted_score: Math.round(totalScore * 1000) / 1000,
       lastSeen: Math.max(
         ...bucket.events.map((e) => new Date(e.timestamp).getTime()),
       ),
@@ -297,14 +342,14 @@ function computeInterestRanking(likeEvents) {
     post_ids: bucket.post_ids,
     count: bucket.count,
     score: bucket.score,
+    weighted_score: bucket.weighted_score,
     rank: RANK_LABELS[idx] || `rank_${idx + 1}`,
     rank_idx: idx,
   }));
 
   // APPLY TIER-BASED CATEGORIZATION (PRIMARY >= 6, SECONDARY >= 4)
   return categorizeInterestTiers(rankedInterests);
-}
-// 10post schema 
+} 
 function computeBudget(rankedInterests) {
   const RANDOM = 2;
   const MAX_INT = 3;
@@ -868,30 +913,79 @@ app.post("/posts", async (req, res) => {
   }
 });
 
-// like handler 
-app.post("/like", async (req, res) => {
-  try {
-    const { post_id, user_id = "default_user" } = req.body;
-    if (
-      !post_id.startsWith("post_") ||
-      !post_id.replace("post_", "").match(/^\d+$/)
-    )
-      return res
-        .status(400)
-        .json({ detail: "post_id must be in format 'post_001'" });
-    const postIdNum = parseInt(post_id.replace("post_", ""));
-    const postData = await qdrantClient.retrieve(COLLECTION_NAME, {
-      ids: [postIdNum],
-      with_vector: true,
-    });
-    if (!postData?.length)
-      return res.status(404).json({ detail: "Post not found" });
-    const category = postData[0].payload.category || "unknown";
-    const liked_at = new Date().toISOString();
+// Generic event recording function
+async function recordUserEvent(userId, postId, eventType, mediaType = "image", watchTimeSecs = null) {
+  if (
+    !postId.startsWith("post_") ||
+    !postId.replace("post_", "").match(/^\d+$/)
+  ) {
+    throw new Error("post_id must be in format 'post_001'");
+  }
+
+  // For watch_time events, only apply to videos
+  if (eventType === EVENT_TYPES.WATCH_TIME && mediaType !== "video") {
+    throw new Error("Watch time tracking only applies to videos");
+  }
+
+  const postIdNum = parseInt(postId.replace("post_", ""));
+  const postData = await qdrantClient.retrieve(COLLECTION_NAME, {
+    ids: [postIdNum],
+    with_vector: true,
+  });
+  
+  if (!postData?.length) {
+    throw new Error("Post not found");
+  }
+
+  const category = postData[0].payload.category || "unknown";
+  const timestamp = new Date().toISOString();
+  
+  // Create unique event ID
+  const eventId = parseInt(
+    crypto
+      .createHash("md5")
+      .update(`${userId}_${postId}_${eventType}_${timestamp}`)
+      .digest("hex")
+      .substring(0, 8),
+    16,
+  );
+
+  const eventPayload = {
+    user_id: userId,
+    post_id: postId,
+    event_type: eventType,
+    category,
+    name: postData[0].payload.name,
+    caption: postData[0].payload.caption,
+    media_url: postData[0].payload.media_url || "",
+    media_type: postData[0].payload.media_type || "image",
+    timestamp,
+    event_weight: EVENT_WEIGHTS[eventType] || EVENT_WEIGHTS.like,
+  };
+
+  // Add watch time seconds if applicable
+  if (eventType === EVENT_TYPES.WATCH_TIME && watchTimeSecs !== null) {
+    eventPayload.watch_time_seconds = watchTimeSecs;
+  }
+
+  // Store in events collection
+  await qdrantClient.upsert(EVENTS_COLLECTION, {
+    wait: true,
+    points: [
+      {
+        id: eventId,
+        vector: postData[0].vector,
+        payload: eventPayload,
+      },
+    ],
+  });
+
+  // Also maintain backward compatibility - store likes in LIKES_COLLECTION
+  if (eventType === EVENT_TYPES.LIKE) {
     const likeId = parseInt(
       crypto
         .createHash("md5")
-        .update(`${user_id}_${post_id}_${liked_at}`)
+        .update(`${userId}_${postId}_${timestamp}`)
         .digest("hex")
         .substring(0, 8),
       16,
@@ -903,21 +997,369 @@ app.post("/like", async (req, res) => {
           id: likeId,
           vector: postData[0].vector,
           payload: {
-            user_id,
-            post_id,
+            user_id: userId,
+            post_id: postId,
             category,
             name: postData[0].payload.name,
             caption: postData[0].payload.caption,
             media_url: postData[0].payload.media_url || "",
-            liked_at,
+            liked_at: timestamp,
           },
         },
       ],
     });
-    console.log(`  /like: ${post_id} cat="${category}" user=${user_id}`);
-    res.json({ message: "Post liked", post_id, user_id, category, liked_at });
+  }
+
+  return {
+    event_id: eventId,
+    post_id: postId,
+    event_type: eventType,
+    user_id: userId,
+    category,
+    timestamp,
+    event_weight: EVENT_WEIGHTS[eventType] || EVENT_WEIGHTS.like,
+  };
+}
+
+// Like handler - now uses generic event recording
+app.post("/like", async (req, res) => {
+  try {
+    const { post_id, user_id = "default_user" } = req.body;
+    const result = await recordUserEvent(user_id, post_id, EVENT_TYPES.LIKE);
+    console.log(`  /like: ${post_id} cat="${result.category}" user=${user_id} weight=${result.event_weight}`);
+    res.json({ 
+      message: "Post liked", 
+      post_id, 
+      user_id, 
+      category: result.category, 
+      liked_at: result.timestamp,
+      event_type: EVENT_TYPES.LIKE,
+      event_weight: result.event_weight,
+    });
   } catch (e) {
     console.error("Like error:", e);
+    res.status(400).json({ detail: e.message });
+  }
+});
+
+// Comment handler - REAL FUNCTIONALITY: Save comments to database
+app.post("/comment", async (req, res) => {
+  try {
+    const { post_id, user_id = "default_user", comment_text = "" } = req.body;
+    
+    if (!comment_text.trim()) {
+      return res.status(400).json({ detail: "Comment text cannot be empty" });
+    }
+
+    // Save comment to database
+    const comment = await Post.addComment(post_id, user_id, comment_text);
+    
+    // Also record event for engagement tracking
+    await recordUserEvent(user_id, post_id, EVENT_TYPES.COMMENT);
+    
+    const post = await Post.getPost(post_id);
+    const category = post?.category || "unknown";
+    
+    console.log(`  /comment: ${post_id} cat="${category}" user=${user_id} text="${comment_text.substring(0, 50)}..."`);
+    
+    res.json({ 
+      message: "Comment posted successfully", 
+      comment_id: comment._id.toString(),
+      post_id, 
+      user_id, 
+      category,
+      comment_text,
+      created_at: comment.created_at,
+      event_type: EVENT_TYPES.COMMENT,
+      event_weight: EVENT_WEIGHTS.comment,
+    });
+  } catch (e) {
+    console.error("Comment error:", e);
+    res.status(400).json({ detail: e.message });
+  }
+});
+
+// Share handler - REAL FUNCTIONALITY: Track shares
+app.post("/share", async (req, res) => {
+  try {
+    const { post_id, user_id = "default_user", platform = "direct" } = req.body;
+    
+    // Record share to database
+    const share = await Post.sharePost(post_id, user_id, platform);
+    
+    // Also record event for engagement tracking
+    await recordUserEvent(user_id, post_id, EVENT_TYPES.SHARE);
+    
+    const post = await Post.getPost(post_id);
+    const category = post?.category || "unknown";
+    
+    console.log(`  /share: ${post_id} cat="${category}" user=${user_id} platform=${platform}`);
+    
+    res.json({ 
+      message: "Post shared successfully", 
+      share_id: share._id.toString(),
+      post_id, 
+      user_id, 
+      category,
+      platform,
+      timestamp: share.shared_at,
+      event_type: EVENT_TYPES.SHARE,
+      event_weight: EVENT_WEIGHTS.share,
+    });
+  } catch (e) {
+    console.error("Share error:", e);
+    res.status(400).json({ detail: e.message });
+  }
+});
+
+// Save handler - REAL FUNCTIONALITY: Actually save posts to user's saved collection
+app.post("/save", async (req, res) => {
+  try {
+    const { post_id, user_id = "default_user" } = req.body;
+    
+    // Check if already saved
+    const alreadySaved = await Post.isPostSaved(post_id, user_id);
+    if (alreadySaved) {
+      // Unsave it
+      await Post.removeSavedPost(post_id, user_id);
+      
+      // Record event
+      await recordUserEvent(user_id, post_id, EVENT_TYPES.SAVE);
+      
+      const post = await Post.getPost(post_id);
+      const category = post?.category || "unknown";
+      
+      console.log(`  /save: ${post_id} cat="${category}" user=${user_id} (REMOVED)`);
+      
+      return res.json({ 
+        message: "Post removed from saved", 
+        post_id, 
+        user_id, 
+        category,
+        is_saved: false,
+        event_type: EVENT_TYPES.SAVE,
+      });
+    }
+    
+    // Save the post
+    const savedPost = await Post.savePost(post_id, user_id);
+    
+    // Record event
+    await recordUserEvent(user_id, post_id, EVENT_TYPES.SAVE);
+    
+    const post = await Post.getPost(post_id);
+    const category = post?.category || "unknown";
+    
+    console.log(`  /save: ${post_id} cat="${category}" user=${user_id} (SAVED)`);
+    
+    res.json({ 
+      message: "Post saved successfully", 
+      save_id: savedPost._id.toString(),
+      post_id, 
+      user_id, 
+      category,
+      saved_at: savedPost.saved_at,
+      is_saved: true,
+      event_type: EVENT_TYPES.SAVE,
+      event_weight: EVENT_WEIGHTS.save,
+    });
+  } catch (e) {
+    console.error("Save error:", e);
+    res.status(400).json({ detail: e.message });
+  }
+});
+
+// Watch time handler - for videos only
+app.post("/watch-time", async (req, res) => {
+  try {
+    const { post_id, user_id = "default_user", watch_time_seconds = 0, media_type = "video" } = req.body;
+    
+    if (media_type !== "video") {
+      return res.status(400).json({ 
+        detail: "Watch time tracking only applies to videos. For images, use image-engagement endpoint." 
+      });
+    }
+
+    const result = await recordUserEvent(user_id, post_id, EVENT_TYPES.WATCH_TIME, media_type, watch_time_seconds);
+    console.log(`  /watch-time: ${post_id} cat="${result.category}" user=${user_id} duration=${watch_time_seconds}s weight=${result.event_weight}`);
+    res.json({ 
+      message: "Watch time recorded", 
+      post_id, 
+      user_id, 
+      category: result.category, 
+      timestamp: result.timestamp,
+      event_type: EVENT_TYPES.WATCH_TIME,
+      watch_time_seconds,
+      event_weight: result.event_weight,
+    });
+  } catch (e) {
+    console.error("Watch time error:", e);
+    res.status(400).json({ detail: e.message });
+  }
+});
+
+// Image engagement handler - for images viewed for 3+ seconds
+app.post("/image-engagement", async (req, res) => {
+  try {
+    const { post_id, user_id = "default_user", view_duration_seconds = 0, media_type = "image" } = req.body;
+    
+    if (media_type === "video") {
+      return res.status(400).json({ 
+        detail: "Use /watch-time for video engagement instead." 
+      });
+    }
+
+    // For images, we treat 3+ second views as engagement
+    // We'll record this as a "like" equivalent engagement
+    if (view_duration_seconds < 3) {
+      return res.status(400).json({ 
+        detail: "Image must be viewed for at least 3 seconds to count as engagement." 
+      });
+    }
+
+    const result = await recordUserEvent(user_id, post_id, EVENT_TYPES.LIKE, media_type);
+    console.log(`  /image-engagement: ${post_id} cat="${result.category}" user=${user_id} duration=${view_duration_seconds}s`);
+    res.json({ 
+      message: "Image engagement recorded", 
+      post_id, 
+      user_id, 
+      category: result.category, 
+      timestamp: result.timestamp,
+      engagement_type: "image_view",
+      view_duration_seconds,
+      event_weight: result.event_weight,
+    });
+  } catch (e) {
+    console.error("Image engagement error:", e);
+    res.status(400).json({ detail: e.message });
+  }
+});
+
+// Get all events for user (replaces the old likes endpoint, but maintains compatibility)
+
+//  COMMENTS 
+app.get("/comments/:post_id", async (req, res) => {
+  try {
+    const comments = await Post.getComments(req.params.post_id);
+    const commentCount = comments.length;
+    res.json({
+      post_id: req.params.post_id,
+      total_comments: commentCount,
+      comments: comments.map(c => ({
+        comment_id: c._id.toString(),
+        user_id: c.user_id,
+        text: c.text,
+        created_at: c.created_at,
+        likes: c.likes || 0
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+app.delete("/comments/:comment_id", async (req, res) => {
+  try {
+    const deleted = await Post.deleteComment(req.params.comment_id);
+    if (!deleted) {
+      return res.status(404).json({ detail: "Comment not found" });
+    }
+    res.json({ message: "Comment deleted successfully" });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// Savedd POSTS 
+app.get("/saved/:user_id", async (req, res) => {
+  try {
+    const savedPosts = await Post.getSavedPosts(req.params.user_id);
+    res.json({
+      user_id: req.params.user_id,
+      total_saved: savedPosts.length,
+      saved_posts: savedPosts.map(p => ({
+        post_id: p.post_id,
+        name: p.name,
+        caption: p.caption,
+        media_url: p.media_url,
+        media_type: p.media_type,
+        category: p.category,
+        saved_at: p.saved_at,
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+app.get("/saved/:user_id/:post_id", async (req, res) => {
+  try {
+    const isSaved = await Post.isPostSaved(req.params.post_id, req.params.user_id);
+    res.json({
+      post_id: req.params.post_id,
+      user_id: req.params.user_id,
+      is_saved: isSaved
+    });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+//  Shares 
+app.get("/shares/:post_id", async (req, res) => {
+  try {
+    const shares = await Post.getShares(req.params.post_id);
+    const shareCount = shares.length;
+    res.json({
+      post_id: req.params.post_id,
+      total_shares: shareCount,
+      shares: shares.map(s => ({
+        share_id: s._id.toString(),
+        shared_by: s.shared_by,
+        platform: s.platform,
+        shared_at: s.shared_at,
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+app.get("/my-shares/:user_id", async (req, res) => {
+  try {
+    const shares = await Post.getUserShares(req.params.user_id);
+    res.json({
+      user_id: req.params.user_id,
+      total_shares: shares.length,
+      shares: shares.map(s => ({
+        share_id: s._id.toString(),
+        post_id: s.post_id,
+        platform: s.platform,
+        shared_at: s.shared_at,
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
+// POSTs STATS ENDPOINT 
+app.get("/post-stats/:post_id", async (req, res) => {
+  try {
+    const commentCount = await Post.getCommentCount(req.params.post_id);
+    const saveCount = await Post.getSaveCount(req.params.post_id);
+    const shareCount = await Post.getShareCount(req.params.post_id);
+    
+    res.json({
+      post_id: req.params.post_id,
+      statistics: {
+        comments: commentCount,
+        saves: saveCount,
+        shares: shareCount,
+        total_engagement: commentCount + saveCount + shareCount
+      }
+    });
+  } catch (e) {
     res.status(500).json({ detail: e.message });
   }
 });
@@ -958,6 +1400,70 @@ app.get("/likes/:user_id", async (req, res) => {
     });
   } catch (e) {
     res.json({ user_id: req.params.user_id, total_likes: 0, liked_posts: [] });
+  }
+});
+
+// Get all events for user (new endpoint)
+app.get("/events/:user_id", async (req, res) => {
+  try {
+    try {
+      await qdrantClient.getCollection(EVENTS_COLLECTION);
+    } catch {
+      return res.json({
+        user_id: req.params.user_id,
+        total_events: 0,
+        events: [],
+        event_summary: {},
+      });
+    }
+
+    const result = await qdrantClient.scroll(EVENTS_COLLECTION, {
+      filter: {
+        must: [{ key: "user_id", match: { value: req.params.user_id } }],
+      },
+      limit: 1000,
+      with_vector: false,
+      with_payload: true,
+    });
+
+    const events = (result?.points || [])
+      .map((pt) => ({
+        post_id: pt.payload.post_id || "",
+        name: pt.payload.name || "",
+        caption: pt.payload.caption || "",
+        media_url: pt.payload.media_url || "",
+        media_type: pt.payload.media_type || "image",
+        category: pt.payload.category || "unknown",
+        event_type: pt.payload.event_type || "like",
+        event_weight: pt.payload.event_weight || EVENT_WEIGHTS.like,
+        watch_time_seconds: pt.payload.watch_time_seconds || null,
+        timestamp: pt.payload.timestamp || new Date(0).toISOString(),
+      }))
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    // Calculate event summary
+    const eventSummary = {};
+    let totalWeightedScore = 0;
+    events.forEach((ev) => {
+      eventSummary[ev.event_type] = (eventSummary[ev.event_type] || 0) + 1;
+      totalWeightedScore += ev.event_weight;
+    });
+
+    res.json({
+      user_id: req.params.user_id,
+      total_events: events.length,
+      events,
+      event_summary: eventSummary,
+      total_weighted_score: Math.round(totalWeightedScore * 1000) / 1000,
+    });
+  } catch (e) {
+    console.error("Get events error:", e);
+    res.json({ 
+      user_id: req.params.user_id, 
+      total_events: 0, 
+      events: [],
+      event_summary: {},
+    });
   }
 });
 // mainSearch handlere
@@ -1151,14 +1657,23 @@ app.delete("/posts/:post_id", async (req, res) => {
 app.get("/stats", async (req, res) => {
   try {
     const tp = (await Post.getAllPosts()).length;
-    const [ci, li] = await Promise.all([
+    const [ci, li, ei] = await Promise.all([
       qdrantClient.getCollection(COLLECTION_NAME),
       qdrantClient.getCollection(LIKES_COLLECTION),
+      qdrantClient.getCollection(EVENTS_COLLECTION).catch(() => null),
     ]);
     res.json({
       mongodb: { total_posts: tp },
-      qdrant: { vectors: ci.points_count, dim: ci.config.params.vectors.size },
-      likes: { total: li.points_count },
+      qdrant: { 
+        vectors: ci.points_count, 
+        dim: ci.config.params.vectors.size,
+        collections: {
+          posts: ci.points_count,
+          likes: li.points_count,
+          events: ei?.points_count || 0,
+        }
+      },
+      event_weights: EVENT_WEIGHTS,
     });
   } catch (e) {
     res.status(500).json({ detail: e.message });
@@ -1211,6 +1726,56 @@ app.get("/debug/likes/:user_id", async (req, res) => {
   }
 });
 
+// Debug: View all events for a user
+app.get("/debug/events/:user_id", async (req, res) => {
+  try {
+    const r = await qdrantClient.scroll(EVENTS_COLLECTION, {
+      filter: {
+        must: [{ key: "user_id", match: { value: req.params.user_id } }],
+      },
+      limit: 500,
+      with_vector: false,
+      with_payload: true,
+    });
+
+    const pts = (r?.points || []).sort(
+      (a, b) => new Date(a.payload.timestamp) - new Date(b.payload.timestamp),
+    );
+
+    // Calculate event statistics
+    const eventStats = {};
+    let totalWeightedScore = 0;
+    pts.forEach((p) => {
+      const eventType = p.payload.event_type || "like";
+      if (!eventStats[eventType]) {
+        eventStats[eventType] = { count: 0, weight: 0, weighted_total: 0 };
+      }
+      eventStats[eventType].count++;
+      eventStats[eventType].weight = EVENT_WEIGHTS[eventType] || EVENT_WEIGHTS.like;
+      eventStats[eventType].weighted_total += eventStats[eventType].weight;
+      totalWeightedScore += eventStats[eventType].weight;
+    });
+
+    res.json({
+      user_id: req.params.user_id,
+      total_events: pts.length,
+      total_weighted_score: Math.round(totalWeightedScore * 1000) / 1000,
+      event_statistics: eventStats,
+      events: pts.map((p) => ({
+        post_id: p.payload.post_id,
+        category: p.payload.category,
+        event_type: p.payload.event_type,
+        event_weight: p.payload.event_weight,
+        media_type: p.payload.media_type,
+        watch_time_seconds: p.payload.watch_time_seconds,
+        timestamp: p.payload.timestamp,
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ detail: e.message });
+  }
+});
+
 app.post("/debug/ranking", (req, res) => {
   const { session_like_events = [] } = req.body;
   const ranked = computeInterestRanking(session_like_events);
@@ -1244,13 +1809,6 @@ app.post("/debug/ranking", (req, res) => {
   });
 });
 
-/**
- * PRECISION VALIDATION ENDPOINT
- * Demonstrates tier categorization logic for all 3 test cases:
- * 1. AI with 6 likes -> PRIMARY
- * 2. Food crossing to 7 likes -> AI stays PRIMARY, Food becomes PRIMARY
- * 3. Sports with 4 likes -> SECONDARY, Education with 5 -> education SECONDARY, sports SECONDARY
- */
 app.get("/debug/tier-validation", (req, res) => {
   const testCases = [
     {

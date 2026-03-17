@@ -265,6 +265,67 @@ sample_posts = [
     {'post_id':'post_213','name':'Cafe Corner','caption':'A cozy nook for work or reading. #cafecorner','media_url':'https://images.unsplash.com/photo-1511920170033-f8396924c348','media_type':'image','category':'cafes'},
     {'post_id':'post_214','name':'Morning Brew','caption':'Start your day with fresh coffee. #morningcoffee','media_url':'https://images.unsplash.com/photo-1509042239860-f550ce710b93','media_type':'image','category':'cafes'},
     {'post_id':'post_215','name':'Coffee Culture','caption':'Exploring cafes from around the world. #coffeeculture','media_url':'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4','media_type':'image','category':'cafes'},
+
+  {'post_id':'post_216','name':'सुप्रभात संदेश','caption':'हर दिन एक नई शुरुआत है। #सुप्रभात','media_url':'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee','media_type':'image','category':'hindi'},
+
+{'post_id':'post_217','name':'प्रेरणादायक विचार','caption':'सफलता मेहनत से मिलती है, किस्मत से नहीं। #प्रेरणा','media_url':'https://images.unsplash.com/photo-1492724441997-5dc865305da7','media_type':'image','category':'hindi'},
+
+{'post_id':'post_218','name':'दोस्ती','caption':'सच्चे दोस्त जिंदगी की सबसे बड़ी दौलत होते हैं। #दोस्ती','media_url':'https://images.unsplash.com/photo-1529156069898-49953e39b3ac','media_type':'image','category':'hindi'},
+
+{'post_id':'post_219','name':'जीवन विचार','caption':'जीवन छोटा है, मुस्कुराते रहो। #जीवन','media_url':'https://images.unsplash.com/photo-1470770841072-f978cf4d019e','media_type':'image','category':'hindi'},
+
+{'post_id':'post_220','name':'सकारात्मक सोच','caption':'सकारात्मक सोच ही सफलता की कुंजी है। #PositiveVibes','media_url':'https://images.unsplash.com/photo-1507525428034-b723cf961d3e','media_type':'image','category':'hindi'},
+
+{'post_id':'post_221','name':'प्रेरक कहानी','caption':'हर संघर्ष एक नई सीख देता है। #संघर्ष','media_url':'https://images.unsplash.com/photo-1482192596544-9eb780fc7f66','media_type':'image','category':'hindi'},
+
+{'post_id':'post_222','name':'खुश रहो','caption':'खुश रहना भी एक कला है। #खुशी','media_url':'https://images.unsplash.com/photo-1501785888041-af3ef285b470','media_type':'image','category':'hindi'},
+
+{'post_id':'post_223','name':'माँ का प्यार','caption':'माँ का प्यार दुनिया का सबसे अनमोल तोहफा है। #माँ','media_url':'https://images.unsplash.com/photo-1492724441997-5dc865305da7','media_type':'image','category':'hindi'},
+
+{'post_id':'post_224','name':'समय का महत्व','caption':'समय अमूल्य है, इसे व्यर्थ न जाने दें। #समय','media_url':'https://images.unsplash.com/photo-1496307042754-b4aa456c4a2d','media_type':'image','category':'hindi'},
+
+{'post_id':'post_225','name':'सपने','caption':'बड़े सपने देखो और उन्हें पूरा करो। #सपने','media_url':'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429','media_type':'image','category':'hindi'},
+
+{'post_id':'post_226','name':'विश्वास','caption':'खुद पर विश्वास सबसे बड़ी ताकत है। #विश्वास','media_url':'https://images.unsplash.com/photo-1482192505345-5655af888cc4','media_type':'image','category':'hindi'},
+
+{'post_id':'post_227','name':'मेहनत','caption':'आज की मेहनत कल की सफलता है। #मेहनत','media_url':'https://images.unsplash.com/photo-1498050108023-c5249f4df085','media_type':'image','category':'hindi'},
+
+{'post_id':'post_228','name':'नई शुरुआत','caption':'हर अंत एक नई शुरुआत है। #नईशुरुआत','media_url':'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee','media_type':'image','category':'hindi'},
+
+{'post_id':'post_229','name':'परिवार','caption':'परिवार ही हमारी असली ताकत है। #परिवार','media_url':'https://images.unsplash.com/photo-1511895426328-dc8714191300','media_type':'image','category':'hindi'},
+
+{'post_id':'post_230','name':'प्रकृति प्रेम','caption':'प्रकृति में सुकून है। #NatureLove','media_url':'https://images.unsplash.com/photo-1501785888041-af3ef285b470','media_type':'image','category':'hindi'},
+
+{'post_id':'post_231','name':'सफलता','caption':'सफलता धैर्य और मेहनत का परिणाम है। #सफलता','media_url':'https://images.unsplash.com/photo-1482192596544-9eb780fc7f66','media_type':'image','category':'hindi'},
+
+{'post_id':'post_232','name':'उम्मीद','caption':'उम्मीद कभी मत छोड़ो। #उम्मीद','media_url':'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429','media_type':'image','category':'hindi'},
+
+{'post_id':'post_233','name':'संघर्ष','caption':'संघर्ष ही इंसान को मजबूत बनाता है। #जीवन','media_url':'https://images.unsplash.com/photo-1492724441997-5dc865305da7','media_type':'image','category':'hindi'},
+
+{'post_id':'post_234','name':'प्रेरक पंक्तियाँ','caption':'जो बदलता है वही आगे बढ़ता है। #प्रेरणा','media_url':'https://images.unsplash.com/photo-1496307042754-b4aa456c4a2d','media_type':'image','category':'hindi'},
+
+{'post_id':'post_235','name':'धैर्य','caption':'धैर्य रखो, सब अच्छा होगा। #धैर्य','media_url':'https://images.unsplash.com/photo-1507525428034-b723cf961d3e','media_type':'image','category':'hindi'},
+
+{'post_id':'post_236','name':'आत्मविश्वास','caption':'आत्मविश्वास सफलता की पहली सीढ़ी है। #आत्मविश्वास','media_url':'https://images.unsplash.com/photo-1482192505345-5655af888cc4','media_type':'image','category':'hindi'},
+
+{'post_id':'post_237','name':'प्रेरक सोच','caption':'सोच बदलो, जीवन बदल जाएगा। #सोच','media_url':'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429','media_type':'image','category':'hindi'},
+
+{'post_id':'post_238','name':'खुशियाँ','caption':'छोटी-छोटी खुशियों में ही बड़ी खुशी छुपी होती है। #खुशी','media_url':'https://images.unsplash.com/photo-1501785888041-af3ef285b470','media_type':'image','category':'hindi'},
+
+{'post_id':'post_239','name':'लक्ष्य','caption':'अपने लक्ष्य पर ध्यान केंद्रित रखो। #लक्ष्य','media_url':'https://images.unsplash.com/photo-1498050108023-c5249f4df085','media_type':'image','category':'hindi'},
+
+{'post_id':'post_240','name':'साहस','caption':'साहस ही डर पर विजय दिलाता है। #साहस','media_url':'https://images.unsplash.com/photo-1470770841072-f978cf4d019e','media_type':'image','category':'hindi'},
+
+{'post_id':'post_241','name':'प्रेरणा स्रोत','caption':'हर व्यक्ति किसी का प्रेरणा स्रोत बन सकता है। #प्रेरणा','media_url':'https://images.unsplash.com/photo-1482192596544-9eb780fc7f66','media_type':'image','category':'hindi'},
+
+{'post_id':'post_242','name':'सकारात्मक ऊर्जा','caption':'सकारात्मक ऊर्जा से जीवन उज्ज्वल होता है। #ऊर्जा','media_url':'https://images.unsplash.com/photo-1507525428034-b723cf961d3e','media_type':'image','category':'hindi'},
+
+{'post_id':'post_243','name':'आशा','caption':'जहाँ आशा है, वहाँ राह है। #आशा','media_url':'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee','media_type':'image','category':'hindi'},
+
+{'post_id':'post_244','name':'संयम','caption':'संयम ही सफलता की पहचान है। #संयम','media_url':'https://images.unsplash.com/photo-1496307042754-b4aa456c4a2d','media_type':'image','category':'hindi'},
+
+{'post_id':'post_245','name':'संतोष','caption':'संतोष में ही सच्ची खुशी है। #संतोष','media_url':'https://images.unsplash.com/photo-1501785888041-af3ef285b470','media_type':'image','category':'hindi'}
+
 ]
 
 # qdrant seeding 

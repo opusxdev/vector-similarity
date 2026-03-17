@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Heart } from "lucide-react";
+import { Heart, MessageCircle, Share2, Bookmark } from "lucide-react";
 
 function CategorySelector({ categories, onApply, onSkip }) {
   const [selected, setSelected] = useState([]);
@@ -762,12 +762,32 @@ export default function App() {
   const [bentoPosts, setBentoPosts] = useState([]);
   const [bentoLoaded, setBentoLoaded] = useState(false);
   const [showBento, setShowBento] = useState(true);
-  const [likeEvents, setLikeEvents] = useState([]);
+  const [likeEvents, setLikeEvents] = useState([]); // Now stores all engagement events
   const leRef = useRef([]);
   const [likedIds, setLikedIds] = useState(new Set());
   const liRef = useRef(new Set());
+  const [watchTimers, setWatchTimers] = useState({}); // Track watch timers for videos
   leRef.current = likeEvents;
   liRef.current = likedIds;
+
+  // Comment modal state
+  const [commentModal, setCommentModal] = useState({ open: false, postId: null });
+  const [commentText, setCommentText] = useState("");
+  
+  // Saved posts state
+  const [savedPosts, setSavedPosts] = useState(new Set());
+  const savedRef = useRef(new Set());
+  
+  // Shared posts state
+  const [sharedPosts, setSharedPosts] = useState(new Set());
+  const sharedRef = useRef(new Set());
+  const [sharingPost, setSharingPost] = useState(null);
+  
+  // Comments state - maps post_id to array of comments
+  const [postComments, setPostComments] = useState({});
+  
+  // Save state being processed
+  const [savingPost, setSavingPost] = useState(null);
 
   const searchInputRef = useRef(null);
 
@@ -843,21 +863,48 @@ export default function App() {
         }
       })
       .catch(() => {});
-    fetch(`${API_BASE}/likes/${USER_ID}`)
+    // Fetch all user events (including different event types)
+    fetch(`${API_BASE}/events/${USER_ID}`)
       .then((r) => r.json())
       .then((d) => {
-        if (!d.liked_posts?.length) return;
-        const evs = d.liked_posts.map((p) => ({
+        if (!d.events?.length) return;
+        // Convert events with event_type (default to 'like' for backward compatibility)
+        const evs = d.events.map((p) => ({
           post_id: p.post_id,
           category: p.category || "unknown",
-          timestamp: p.liked_at,
+          event_type: p.event_type || "like",
+          timestamp: p.timestamp,
         }));
-        const ids = new Set(d.liked_posts.map((p) => p.post_id));
+        const ids = new Set(d.events.map((p) => p.post_id));
         setLikeEvents(evs);
         setLikedIds(ids);
         leRef.current = evs;
         liRef.current = ids;
         console.log(`[mount] restored ${evs.length} events`);
+      })
+      .catch(() => {});
+    // Fetch user's saved posts
+    fetch(`${API_BASE}/saved/${USER_ID}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.saved_posts?.length) {
+          const savedSet = new Set(d.saved_posts.map(p => p.post_id));
+          setSavedPosts(savedSet);
+          savedRef.current = savedSet;
+          console.log(`[mount] restored ${savedSet.size} saved posts`);
+        }
+      })
+      .catch(() => {});
+    // Fetch user's shared posts
+    fetch(`${API_BASE}/my-shares/${USER_ID}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.shares?.length) {
+          const sharedSet = new Set(d.shares.map(s => s.post_id));
+          setSharedPosts(sharedSet);
+          sharedRef.current = sharedSet;
+          console.log(`[mount] restored ${sharedSet.size} shared posts`);
+        }
       })
       .catch(() => {});
   }, []);
@@ -875,6 +922,7 @@ export default function App() {
       const ev = {
         post_id: data.post_id,
         category: data.category || "unknown",
+        event_type: "like",
         timestamp: data.liked_at || new Date().toISOString(),
       };
       leRef.current = [...leRef.current, ev];
@@ -888,6 +936,216 @@ export default function App() {
     } catch (err) {
       console.error("[like]", err);
       setError(`Like failed: ${err.message}`);
+    }
+  }
+
+  async function handleComment(postId, commentTextArg = "") {
+    if (!commentTextArg) {
+      // Open modal for user to enter comment
+      setCommentModal({ open: true, postId });
+      setCommentText("");
+      return;
+    }
+
+    // Submit comment with provided text
+    try {
+      const res = await fetch(`${API_BASE}/comment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          post_id: postId, 
+          user_id: USER_ID,
+          comment_text: commentTextArg,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const ev = {
+        post_id: data.post_id,
+        category: data.category || "unknown",
+        event_type: "comment",
+        timestamp: data.timestamp || new Date().toISOString(),
+      };
+      leRef.current = [...leRef.current, ev];
+      setLikeEvents([...leRef.current]);
+      
+      // Reload comments for this post
+      loadCommentsForPost(postId);
+      
+      console.log(
+        `[comment] ${postId} cat="${ev.category}" weight=0.3 total=${leRef.current.length}`,
+      );
+      setError("");
+      setCommentModal({ open: false, postId: null });
+    } catch (err) {
+      console.error("[comment]", err);
+      setError(`Comment failed: ${err.message}`);
+    }
+  }
+
+  async function loadCommentsForPost(postId) {
+    try {
+      const res = await fetch(`${API_BASE}/comments/${postId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setPostComments(prev => ({
+        ...prev,
+        [postId]: data.comments || []
+      }));
+    } catch (err) {
+      console.error("[load comments]", err);
+    }
+  }
+
+  async function handleShare(postId) {
+    if (sharingPost === postId) return; // Prevent double-click
+    
+    setSharingPost(postId);
+    try {
+      const res = await fetch(`${API_BASE}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post_id: postId, user_id: USER_ID }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      
+      // Add to shared posts set
+      const newSharedPosts = new Set([...sharedRef.current, postId]);
+      sharedRef.current = newSharedPosts;
+      setSharedPosts(newSharedPosts);
+      
+      // Record as share event
+      const ev = {
+        post_id: data.post_id,
+        category: data.category || "unknown",
+        event_type: "share",
+        timestamp: data.timestamp || new Date().toISOString(),
+      };
+      leRef.current = [...leRef.current, ev];
+      setLikeEvents([...leRef.current]);
+      
+      console.log(
+        `[share] ${postId} cat="${ev.category}" weight=0.4 total=${leRef.current.length}`,
+      );
+      setError("");
+    } catch (err) {
+      console.error("[share]", err);
+      setError(`Share failed: ${err.message}`);
+    } finally {
+      setSharingPost(null);
+    }
+  }
+
+  async function handleSave(postId) {
+    if (savingPost === postId) return; // Prevent double-click
+    
+    setSavingPost(postId);
+    try {
+      const res = await fetch(`${API_BASE}/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post_id: postId, user_id: USER_ID }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      
+      // Toggle save state
+      const newSavedPosts = new Set(savedRef.current);
+      if (data.is_saved) {
+        newSavedPosts.add(postId);
+      } else {
+        newSavedPosts.delete(postId);
+      }
+      savedRef.current = newSavedPosts;
+      setSavedPosts(newSavedPosts);
+      
+      // Record as save event
+      const ev = {
+        post_id: data.post_id,
+        category: data.category || "unknown",
+        event_type: "save",
+        timestamp: data.timestamp || new Date().toISOString(),
+      };
+      leRef.current = [...leRef.current, ev];
+      setLikeEvents([...leRef.current]);
+      
+      console.log(
+        `[save] ${postId} is_saved=${data.is_saved} cat="${ev.category}" weight=0.5 total=${leRef.current.length}`,
+      );
+      setError("");
+    } catch (err) {
+      console.error("[save]", err);
+      setError(`Save failed: ${err.message}`);
+    } finally {
+      setSavingPost(null);
+    }
+  }
+
+  async function handleWatchTime(postId, watchSeconds) {
+    try {
+      const res = await fetch(`${API_BASE}/watch-time`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          post_id: postId, 
+          user_id: USER_ID,
+          watch_time_seconds: watchSeconds,
+          media_type: "video",
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const ev = {
+        post_id: data.post_id,
+        category: data.category || "unknown",
+        event_type: "watch_time",
+        timestamp: data.timestamp || new Date().toISOString(),
+      };
+      leRef.current = [...leRef.current, ev];
+      setLikeEvents([...leRef.current]);
+      console.log(
+        `[watch-time] ${postId} cat="${ev.category}" duration=${watchSeconds}s weight=0.6 total=${leRef.current.length}`,
+      );
+      setError("");
+    } catch (err) {
+      console.error("[watch-time]", err);
+      setError(`Watch time tracking failed: ${err.message}`);
+    }
+  }
+
+  async function handleImageEngagement(postId, viewDuration) {
+    try {
+      const res = await fetch(`${API_BASE}/image-engagement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          post_id: postId, 
+          user_id: USER_ID,
+          view_duration_seconds: viewDuration,
+          media_type: "image",
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (liRef.current.has(postId)) return; // Already tracked
+      const ev = {
+        post_id: data.post_id,
+        category: data.category || "unknown",
+        event_type: "like", // Image engagement recorded as like equivalent
+        timestamp: data.timestamp || new Date().toISOString(),
+      };
+      liRef.current = new Set([...liRef.current, postId]);
+      leRef.current = [...leRef.current, ev];
+      setLikeEvents([...leRef.current]);
+      setLikedIds(new Set(liRef.current));
+      console.log(
+        `[image-engagement] ${postId} cat="${ev.category}" duration=${viewDuration}s total=${leRef.current.length}`,
+      );
+      setError("");
+    } catch (err) {
+      // Silently fail for image engagement (not critical)
+      console.log("[image-engagement]", err.message);
     }
   }
 
@@ -980,6 +1238,101 @@ export default function App() {
         fontFamily: "system-ui,sans-serif",
       }}
     >
+      {/* Comment Modal */}
+      {commentModal.open && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.85)",
+            backdropFilter: "blur(8px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+          onClick={() => setCommentModal({ open: false, postId: null })}
+        >
+          <div
+            style={{
+              background: "#111",
+              border: "1px solid #222",
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: 400,
+              width: "100%",
+              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.6)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "16px", fontSize: "18px" }}>
+              Add a Comment
+            </h3>
+            <textarea
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder="Write your comment..."
+              style={{
+                width: "100%",
+                height: "80px",
+                padding: "10px",
+                background: "#0a0a0a",
+                border: "1px solid #222",
+                borderRadius: "8px",
+                color: "#fff",
+                fontSize: "13px",
+                fontFamily: "system-ui,sans-serif",
+                resize: "none",
+                marginBottom: "12px",
+              }}
+            />
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                onClick={() => {
+                  if (commentText.trim()) {
+                    handleComment(commentModal.postId, commentText.trim());
+                  }
+                }}
+                disabled={!commentText.trim()}
+                style={{
+                  flex: 1,
+                  padding: "10px 16px",
+                  background: commentText.trim() ? "#fff" : "#333",
+                  color: commentText.trim() ? "#000" : "#666",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: commentText.trim() ? "pointer" : "not-allowed",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                }}
+              >
+                Post Comment
+              </button>
+              <button
+                onClick={() => setCommentModal({ open: false, postId: null })}
+                style={{
+                  flex: 1,
+                  padding: "10px 16px",
+                  background: "#1a1a1a",
+                  color: "#888",
+                  border: "1px solid #222",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ maxWidth: "860px", margin: "0 auto" }}>
         <h1
           style={{
@@ -1164,6 +1517,20 @@ export default function App() {
               {" "}
               {breakdown?.total}
             </span>
+            <br />
+            <span style={{ color: "#666" }}>event distribution:</span>
+            {(() => {
+              const eventCounts = {};
+              likeEvents.forEach(ev => {
+                const type = ev.event_type || 'like';
+                eventCounts[type] = (eventCounts[type] || 0) + 1;
+              });
+              return Object.entries(eventCounts).map(([type, count]) => (
+                <span key={type} style={{ marginLeft: "8px", color: type === "like" ? "#ef4444" : type === "comment" ? "#8b5cf6" : type === "share" ? "#3b82f6" : type === "save" ? "#f59e0b" : "#10b981" }}>
+                  {type}({count})
+                </span>
+              ));
+            })()}
           </div>
         )}
 
@@ -1315,32 +1682,196 @@ export default function App() {
                   >
                     {post.caption}
                   </div>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => handleLike(post.post_id)}
+                      disabled={liked}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        padding: "6px 13px",
+                        background: liked ? "#dc2626" : "#1a1a1a",
+                        color: liked ? "#fff" : "#555",
+                        border: `1px solid ${liked ? "#dc2626" : "#222"}`,
+                        borderRadius: "18px",
+                        cursor: liked ? "default" : "pointer",
+                        fontSize: "12px",
+                        fontWeight: 500,
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      <Heart
+                        size={12}
+                        fill={liked ? "#fff" : "none"}
+                        stroke={liked ? "#fff" : "#555"}
+                      />
+                      {liked ? "Liked" : "Like"}
+                    </button>
+                    <button
+                      onClick={() => handleComment(post.post_id)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        padding: "6px 13px",
+                        background: "#1a1a1a",
+                        color: "#555",
+                        border: "1px solid #222",
+                        borderRadius: "18px",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        fontWeight: 500,
+                        transition: "all 0.2s ease",
+                      }}
+                      onMouseOver={(e) => {
+                        e.target.style.borderColor = "#444";
+                        e.target.style.color = "#888";
+                      }}
+                      onMouseOut={(e) => {
+                        e.target.style.borderColor = "#222";
+                        e.target.style.color = "#555";
+                      }}
+                    >
+                      <MessageCircle size={12} />
+                      Comment {postComments[post.post_id]?.length > 0 && `(${postComments[post.post_id].length})`}
+                    </button>
+                    <button
+                      onClick={() => handleShare(post.post_id)}
+                      disabled={sharingPost === post.post_id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        padding: "6px 13px",
+                        background: sharedPosts.has(post.post_id) ? "#3b82f6" : "#1a1a1a",
+                        color: sharedPosts.has(post.post_id) ? "#fff" : "#555",
+                        border: `1px solid ${sharedPosts.has(post.post_id) ? "#3b82f6" : "#222"}`,
+                        borderRadius: "18px",
+                        cursor: sharingPost === post.post_id ? "not-allowed" : "pointer",
+                        fontSize: "12px",
+                        fontWeight: 500,
+                        transition: "all 0.2s ease",
+                        opacity: sharingPost === post.post_id ? 0.7 : 1,
+                      }}
+                      onMouseOver={(e) => {
+                        if (sharingPost !== post.post_id) {
+                          e.target.style.borderColor = "#444";
+                          e.target.style.color = "#888";
+                        }
+                      }}
+                      onMouseOut={(e) => {
+                        if (sharingPost !== post.post_id) {
+                          e.target.style.borderColor = sharedPosts.has(post.post_id) ? "#3b82f6" : "#222";
+                          e.target.style.color = sharedPosts.has(post.post_id) ? "#fff" : "#555";
+                        }
+                      }}
+                    >
+                      <Share2 size={12} />
+                      {sharedPosts.has(post.post_id) ? "Shared" : "Share"}
+                    </button>
+                    <button
+                      onClick={() => handleSave(post.post_id)}
+                      disabled={savingPost === post.post_id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        padding: "6px 13px",
+                        background: savedPosts.has(post.post_id) ? "#f59e0b" : "#1a1a1a",
+                        color: savedPosts.has(post.post_id) ? "#000" : "#555",
+                        border: `1px solid ${savedPosts.has(post.post_id) ? "#f59e0b" : "#222"}`,
+                        borderRadius: "18px",
+                        cursor: savingPost === post.post_id ? "not-allowed" : "pointer",
+                        fontSize: "12px",
+                        fontWeight: 500,
+                        transition: "all 0.2s ease",
+                        opacity: savingPost === post.post_id ? 0.7 : 1,
+                      }}
+                      onMouseOver={(e) => {
+                        if (savingPost !== post.post_id) {
+                          e.target.style.borderColor = "#444";
+                          e.target.style.color = "#888";
+                        }
+                      }}
+                      onMouseOut={(e) => {
+                        if (savingPost !== post.post_id) {
+                          e.target.style.borderColor = savedPosts.has(post.post_id) ? "#f59e0b" : "#222";
+                          e.target.style.color = savedPosts.has(post.post_id) ? "#000" : "#555";
+                        }
+                      }}
+                    >
+                      <Bookmark size={12} fill={savedPosts.has(post.post_id) ? "currentColor" : "none"} />
+                      {savedPosts.has(post.post_id) ? "Saved" : "Save"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Comments Section */}
+              {postComments[post.post_id] && postComments[post.post_id].length > 0 && (
+                <div
+                  style={{
+                    background: "#0a0a0a",
+                    padding: "12px 18px",
+                    marginBottom: "8px",
+                    border: "1px solid #1a1a1a",
+                    borderRadius: "10px",
+                    fontSize: "12px",
+                  }}
+                >
+                  <div style={{ color: "#555", marginBottom: "8px", fontSize: "10px", fontWeight: 600, textTransform: "uppercase" }}>
+                    Comments ({postComments[post.post_id].length})
+                  </div>
+                  {postComments[post.post_id].map((comment, cidx) => (
+                    <div
+                      key={cidx}
+                      style={{
+                        background: "#111",
+                        padding: "8px 10px",
+                        marginBottom: cidx < postComments[post.post_id].length - 1 ? "6px" : 0,
+                        borderRadius: "6px",
+                        border: "1px solid #1a1a1a",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                        <div style={{ color: "#8b5cf6", fontWeight: 600, fontSize: "11px" }}>
+                          {comment.user_id || "Anonymous"}
+                        </div>
+                        <div style={{ color: "#555", fontSize: "10px" }}>
+                          {new Date(comment.created_at || comment.timestamp).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div style={{ color: "#aaa", fontSize: "11px", lineHeight: "1.4" }}>
+                        {comment.comment_text || comment.text}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Load Comments Button */}
+              {!postComments[post.post_id] && (
+                <div style={{ marginBottom: "8px" }}>
                   <button
-                    onClick={() => handleLike(post.post_id)}
-                    disabled={liked}
+                    onClick={() => loadCommentsForPost(post.post_id)}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "5px",
-                      padding: "6px 13px",
-                      background: liked ? "#dc2626" : "#1a1a1a",
-                      color: liked ? "#fff" : "#555",
-                      border: `1px solid ${liked ? "#dc2626" : "#222"}`,
-                      borderRadius: "18px",
-                      cursor: liked ? "default" : "pointer",
-                      fontSize: "12px",
+                      padding: "6px 12px",
+                      background: "#0a0a0a",
+                      color: "#555",
+                      border: "1px solid #1a1a1a",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontSize: "11px",
+                      width: "100%",
                       fontWeight: 500,
                     }}
                   >
-                    <Heart
-                      size={12}
-                      fill={liked ? "#fff" : "none"}
-                      stroke={liked ? "#fff" : "#555"}
-                    />
-                    {liked ? "Liked" : "Like"}
+                    Load comments
                   </button>
                 </div>
-              </div>
+              )}
+              
               {idx === results.length - 1 && results.length >= 8 && (
                 <div
                   style={{
